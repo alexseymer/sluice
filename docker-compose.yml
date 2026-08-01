@@ -1,0 +1,11 @@
+services:
+  sluice:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - sluice-data:/data
+    restart: unless-stopped
+
+volumes:
+  sluice-data:
