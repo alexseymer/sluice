@@ -11,7 +11,7 @@ Jour fixe → plan → GitHub issues → dispatch to one AI CLI backend → basi
 - [ ] One AI CLI backend adapter (candidate: Claude Code, given documented CLI/output format)
 - [ ] Basic time-window budget tracking for that backend
 - [ ] One chat backend (Matrix or Signal)
-- [ ] Docker Compose bring-up
+- [x] Docker Compose bring-up
 
 ## Phase 2 — Multi-backend
 - [ ] Cursor adapter
