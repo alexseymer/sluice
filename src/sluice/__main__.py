@@ -10,6 +10,7 @@ import structlog
 from sluice import __version__
 from sluice.config import load_settings
 from sluice.core.app import SluiceApp
+from sluice.core.chat_loop import run_chat_loop
 
 log = structlog.get_logger()
 
@@ -23,11 +24,13 @@ async def _run() -> int:
         chat=settings.chat_backend,
         forge=settings.forge_backend,
         ai_backend=settings.ai_backend,
+        chat_running=app.chat.is_running,
         next_jour_fixe=str(app.jour_fixe.next_scheduled_at()),
     )
-    # Phase 1: long-running daemon loop lands here.
-    # For now, start and exit cleanly so `docker compose up` validates the stack.
-    await app.stop()
+    try:
+        await run_chat_loop(app)
+    finally:
+        await app.stop()
     return 0
 
 

@@ -4,9 +4,9 @@
 
 ### Current repository state
 
-Sluice is in **Phase 1 scaffold** — a runnable Python package with core interfaces,
-stub adapters, and Docker Compose bring-up. Adapters (Matrix, GitHub, Claude Code) raise
-`NotImplementedError` until implemented.
+Sluice is in **Phase 1** — a runnable Python package with core interfaces and Docker
+Compose bring-up. The Matrix chat adapter is implemented; GitHub and Claude Code adapters
+remain stubs.
 
 ### Project layout
 
@@ -51,10 +51,10 @@ docker compose up --build
 
 ### Phase 1 implementation order (from ROADMAP.md)
 
-1. Matrix or Signal chat adapter (real implementation)
+1. ~~Matrix chat adapter~~ (done)
 2. GitHub forge adapter
 3. Claude Code backend adapter
-4. Jour fixe daemon loop in `__main__.py`
+4. Jour fixe scheduler integration (cron-triggered sessions)
 5. Budget tracking wired to SQLite store
 
 ### Secrets
