@@ -115,6 +115,19 @@ async def test_dispatch_runs_cli_and_records_budget(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_missing_cli_returns_error(tmp_path) -> None:
+    adapter = ClaudeCodeBackendAdapter(dispatch_timeout_seconds=5)
+    with patch(
+        "sluice.adapters.cli_backend.asyncio.create_subprocess_exec",
+        new=AsyncMock(side_effect=FileNotFoundError(2, "No such file", "claude")),
+    ):
+        result = await adapter.dispatch(PlanTask(title="Ship"), worktree=tmp_path / "wt")
+    assert result.success is False
+    assert result.error is not None
+    assert "CLI not found" in result.error
+
+
+@pytest.mark.asyncio
 async def test_dispatch_detects_rate_limit_fallback(tmp_path) -> None:
     store = SQLiteStateStore(tmp_path / "sluice.db")
     await store.initialize()

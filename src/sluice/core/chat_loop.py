@@ -66,7 +66,21 @@ async def run_chat_loop(app: SluiceApp) -> None:
 
     log.info("chat_loop_started")
     async for message in app.chat.listen():
-        await handle_message(app, message)
+        try:
+            await handle_message(app, message)
+        except Exception:
+            log.exception("chat_message_failed", sender=message.sender)
+            try:
+                await app.chat.send(
+                    OutgoingMessage(
+                        text=(
+                            "Something went wrong handling that message. "
+                            "The session should still be open — try again."
+                        )
+                    )
+                )
+            except Exception:
+                log.exception("chat_error_notice_failed")
 
 
 async def finalize_jour_fixe(app: SluiceApp) -> Plan | None:

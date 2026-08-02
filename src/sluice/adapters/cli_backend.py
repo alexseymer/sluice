@@ -114,13 +114,31 @@ class CLIBackendAdapter(BackendAdapter):
         env = os.environ.copy()
         env.update(invocation.env)
 
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=invocation.cwd,
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=invocation.cwd,
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            log.error(
+                "backend_cli_not_found",
+                backend=self._adapter_id,
+                cli_path=self._cli_path,
+            )
+            return DispatchResult(
+                task_id=task.id,
+                backend_id=self._adapter_id,
+                success=False,
+                error=(
+                    f"CLI not found: {self._cli_path!r}. "
+                    "Install it on the Sluice host, or set SLUICE_JOUR_FIXE_LLM_* "
+                    "for Matrix conversation without a local CLI."
+                ),
+                completed_at=datetime.now(UTC),
+            )
         self._running_tasks[str(task.id)] = process
 
         try:

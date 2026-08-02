@@ -11,7 +11,12 @@ import pytest
 from sluice.adapters.chat import IncomingMessage
 from sluice.core.chat_loop import is_natural_close
 from sluice.core.jour_fixe import JourFixeManager
-from sluice.core.jour_fixe_chat import extract_facilitator_reply, facilitate_turn, format_transcript
+from sluice.core.jour_fixe_chat import (
+    JourFixeLlmSettings,
+    extract_facilitator_reply,
+    facilitate_turn,
+    format_transcript,
+)
 from sluice.models.schedule import DispatchResult
 
 
@@ -47,15 +52,38 @@ async def test_facilitate_turn_dispatches_backend(tmp_path: Path) -> None:
             output="Sounds like the outage is the main issue. What have you tried?",
         )
     )
-    reply = await facilitate_turn(
+    reply, error = await facilitate_turn(
         backend=backend,
         turns=[("human", "Prod keeps falling over")],
         latest_human="Prod keeps falling over",
         worktree=tmp_path / "chat",
     )
+    assert error is None
     assert reply is not None
     assert "outage" in reply.lower() or "falling" in reply.lower() or "issue" in reply.lower()
     backend.dispatch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_facilitate_turn_cli_missing_hint(tmp_path: Path) -> None:
+    backend = AsyncMock()
+    backend.dispatch = AsyncMock(
+        return_value=DispatchResult(
+            task_id=uuid4(),
+            backend_id="cursor",
+            success=False,
+            error="CLI not found: 'agent'",
+        )
+    )
+    reply, error = await facilitate_turn(
+        backend=backend,
+        turns=[("human", "Hi")],
+        latest_human="Hi",
+        worktree=tmp_path / "chat",
+    )
+    assert reply is None
+    assert error is not None
+    assert "SLUICE_JOUR_FIXE_LLM" in error
 
 
 @pytest.mark.asyncio
@@ -103,10 +131,11 @@ async def test_handle_message_without_backend_explains(tmp_path: Path) -> None:
         cron_expression="0 9 * * *",
         conversation_backend=None,
         worktree_base=tmp_path,
+        llm=JourFixeLlmSettings(),
     )
     await manager.start_session()
     chat.send.reset_mock()
     await manager.handle_message(
         IncomingMessage(text="Hello", sender="@you:example.com")
     )
-    assert "SLUICE_PLANNER_BACKEND" in chat.send.await_args.args[0].text
+    assert "SLUICE_JOUR_FIXE_LLM" in chat.send.await_args.args[0].text
