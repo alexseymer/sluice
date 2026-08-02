@@ -20,7 +20,7 @@ AI coding subscriptions have usage windows. Burn through them in a burst and you
 4. **Scheduling** — Sluice dispatches unblocked tasks to specialized AI CLI backends throughout the day, respecting each one's budget/rate limits.
 5. **Check-ins** — async updates over Signal, Telegram, or Matrix; you can query status or interrupt at any time outside the jour fixe.
 
-Set `SLUICE_PLANNER_BACKEND` (e.g. `cursor` or `claude_code`) so jour fixe chat and plan structuring can call an AI CLI. Without it, Sluice still buffers notes but cannot hold a real conversation.
+Set `SLUICE_JOUR_FIXE_LLM_*` (OpenAI-compatible chat API) for Matrix conversation when running in Docker — Linux containers cannot execute Windows Cursor/Claude CLIs. Optionally set `SLUICE_PLANNER_BACKEND` for CLI-based planning/dispatch on hosts where those tools exist.
 
 ## Privacy
 

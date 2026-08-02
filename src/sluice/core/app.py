@@ -11,6 +11,7 @@ from sluice.adapters.matrix_chat import MatrixChatAdapter
 from sluice.config import SluiceSettings
 from sluice.core.budget import BudgetManager
 from sluice.core.jour_fixe import JourFixeManager
+from sluice.core.jour_fixe_chat import JourFixeLlmSettings
 from sluice.core.plan_approval import PlanApprovalManager
 from sluice.core.planner import Planner
 from sluice.core.scheduler import Scheduler
@@ -42,6 +43,11 @@ class SluiceApp:
             timeout_minutes=settings.jour_fixe_timeout_minutes,
             conversation_backend=conversation_backend,
             worktree_base=settings.data_dir / "planner",
+            llm=JourFixeLlmSettings(
+                base_url=settings.jour_fixe_llm_base_url,
+                api_key=settings.jour_fixe_llm_api_key,
+                model=settings.jour_fixe_llm_model,
+            ),
         )
         self.scheduler = Scheduler(
             backends=self.backends,

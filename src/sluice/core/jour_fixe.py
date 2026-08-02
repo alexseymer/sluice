@@ -13,7 +13,11 @@ from croniter import croniter
 
 from sluice.adapters.backend import BackendAdapter
 from sluice.adapters.chat import ChatAdapter, IncomingMessage, OutgoingMessage
-from sluice.core.jour_fixe_chat import NO_BACKEND_REPLY, facilitate_turn
+from sluice.core.jour_fixe_chat import (
+    NO_BACKEND_REPLY,
+    JourFixeLlmSettings,
+    facilitate_turn,
+)
 from sluice.core.planner import Planner
 from sluice.models.plan import Plan
 
@@ -66,6 +70,7 @@ class JourFixeManager:
         *,
         conversation_backend: BackendAdapter | None = None,
         worktree_base: Path | None = None,
+        llm: JourFixeLlmSettings | None = None,
     ) -> None:
         self._chat = chat
         self._planner = planner
@@ -73,6 +78,7 @@ class JourFixeManager:
         self._timeout_minutes = timeout_minutes
         self._conversation_backend = conversation_backend
         self._worktree_base = worktree_base or Path(".sluice-data/planner")
+        self._llm = llm or JourFixeLlmSettings()
         self._session: JourFixeSession | None = None
 
     @property
@@ -111,26 +117,44 @@ class JourFixeManager:
         self._session.messages.append(message)
         self._session.turns.append(ConversationTurn(role="human", text=message.text))
 
-        if self._conversation_backend is None:
+        has_llm = self._llm.is_configured
+        has_cli = self._conversation_backend is not None
+        if not has_llm and not has_cli:
             await self._chat.send(OutgoingMessage(text=NO_BACKEND_REPLY))
             return
 
         await self._chat.send(OutgoingMessage(text="Thinking…"))
         worktree = self._worktree_base / str(self._session.id) / "chat"
         turns = [(t.role, t.text) for t in self._session.turns]
-        reply = await facilitate_turn(
-            backend=self._conversation_backend,
-            turns=turns,
-            latest_human=message.text,
-            worktree=worktree,
-        )
+        try:
+            reply, error = await facilitate_turn(
+                turns=turns,
+                latest_human=message.text,
+                worktree=worktree,
+                backend=self._conversation_backend,
+                llm=self._llm,
+            )
+        except Exception:
+            log.exception("jour_fixe_facilitate_failed", session_id=str(self._session.id))
+            await self._chat.send(
+                OutgoingMessage(
+                    text=(
+                        "Something went wrong while thinking that through. "
+                        "Try again, or say you're done and I'll draft a plan from notes."
+                    )
+                )
+            )
+            return
+
+        if error and not reply:
+            await self._chat.send(OutgoingMessage(text=error))
+            return
         if reply is None:
             await self._chat.send(
                 OutgoingMessage(
                     text=(
-                        "I couldn't get a reply from the AI backend just now. "
-                        "Say a bit more, or tell me when you're done and I'll draft the plan "
-                        "from what we have."
+                        "I couldn't get a reply just now. "
+                        "Say a bit more, or tell me when you're done and I'll draft the plan."
                     )
                 )
             )
