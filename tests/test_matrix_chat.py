@@ -80,6 +80,26 @@ async def test_on_room_message_filters_sender(adapter: MatrixChatAdapter) -> Non
 
 
 @pytest.mark.asyncio
+async def test_on_room_message_skips_while_catching_up(adapter: MatrixChatAdapter) -> None:
+    room = MatrixRoom("!room:example.com", None)
+    event = RoomMessageText(
+        source={
+            "type": "m.room.message",
+            "sender": "@human:example.com",
+            "content": {"msgtype": "m.text", "body": "/done"},
+            "event_id": "$old",
+            "origin_server_ts": 1,
+        },
+        body="/done",
+        formatted_body=None,
+        format=None,
+    )
+    adapter._catching_up = True
+    await adapter._on_room_message(room, event)
+    assert adapter._queue.qsize() == 0
+
+
+@pytest.mark.asyncio
 async def test_send_uses_room_send(adapter: MatrixChatAdapter) -> None:
     client = AsyncMock()
     adapter._client = client
