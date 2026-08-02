@@ -10,6 +10,7 @@ from sluice.adapters.matrix_chat import MatrixChatAdapter
 from sluice.config import SluiceSettings
 from sluice.core.budget import BudgetManager
 from sluice.core.jour_fixe import JourFixeManager
+from sluice.core.plan_approval import PlanApprovalManager
 from sluice.core.planner import Planner
 from sluice.core.scheduler import Scheduler
 from sluice.store.sqlite import SQLiteStateStore
@@ -39,16 +40,23 @@ class SluiceApp:
             budget_manager=self.budget_manager,
             worktree_base=settings.worktree_base_dir,
         )
+        self.plan_approval = PlanApprovalManager(
+            forge=self.forge,
+            store=self.store,
+            auto_approve=settings.plan_auto_approve,
+        )
 
     async def start(self) -> None:
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.settings.worktree_base_dir.mkdir(parents=True, exist_ok=True)
         await self.store.initialize()
         await self.chat.start()
+        await self.forge.start()
         log.info("sluice_started", version="0.1.0")
 
     async def stop(self) -> None:
         await self.chat.stop()
+        await self.forge.close()
         log.info("sluice_stopped")
 
     @staticmethod

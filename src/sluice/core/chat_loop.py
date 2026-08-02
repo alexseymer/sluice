@@ -6,12 +6,16 @@ import structlog
 
 from sluice.adapters.chat import IncomingMessage, OutgoingMessage
 from sluice.core.app import SluiceApp
+from sluice.core.plan_approval import PlanApprovalError
 
 log = structlog.get_logger()
 
 HELP_TEXT = """Sluice commands:
   /jour-fixe  — start a jour fixe session
   /done       — finish the session and generate a plan
+  /plan       — show the plan awaiting approval
+  /approve    — approve the plan and create GitHub issues
+  /reject     — discard the plan awaiting approval
   /status     — show current session status
   /help       — show this message"""
 
@@ -35,6 +39,13 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         return
 
     if command in {"/jour-fixe", "/start", "jour fixe"}:
+        if app.plan_approval.has_pending_plan:
+            await app.chat.send(
+                OutgoingMessage(
+                    text="A plan is already awaiting approval. `/approve` or `/reject` it first."
+                )
+            )
+            return
         session = await app.jour_fixe.start_session()
         await app.chat.send(
             OutgoingMessage(
@@ -45,17 +56,55 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
 
     if command == "/status":
         session = app.jour_fixe.active_session
-        if session is None or not session.is_active:
-            await app.chat.send(OutgoingMessage(text="No active jour fixe session."))
-            return
-        await app.chat.send(
-            OutgoingMessage(
-                text=(
-                    f"Active jour fixe since {session.started_at.isoformat()} "
-                    f"with {len(session.messages)} message(s) collected."
+        if session is not None and session.is_active:
+            await app.chat.send(
+                OutgoingMessage(
+                    text=(
+                        f"Active jour fixe since {session.started_at.isoformat()} "
+                        f"with {len(session.messages)} message(s) collected."
+                    )
                 )
             )
+            return
+        if app.plan_approval.has_pending_plan and app.plan_approval.pending_plan is not None:
+            plan = app.plan_approval.pending_plan
+            await app.chat.send(
+                OutgoingMessage(
+                    text=(
+                        f"No active jour fixe. Plan {plan.id} awaits approval "
+                        f"({len(plan.tasks)} tasks)."
+                    )
+                )
+            )
+            return
+        await app.chat.send(OutgoingMessage(text="No active jour fixe session or pending plan."))
+        return
+
+    if command == "/plan":
+        if not app.plan_approval.has_pending_plan or app.plan_approval.pending_plan is None:
+            await app.chat.send(OutgoingMessage(text="No plan is awaiting approval."))
+            return
+        await app.chat.send(
+            OutgoingMessage(text=app.plan_approval.format_plan(app.plan_approval.pending_plan))
         )
+        return
+
+    if command == "/approve":
+        try:
+            plan = await app.plan_approval.approve()
+        except PlanApprovalError as exc:
+            await app.chat.send(OutgoingMessage(text=str(exc)))
+            return
+        await app.chat.send(OutgoingMessage(text=app.plan_approval.format_filed_summary(plan)))
+        return
+
+    if command == "/reject":
+        try:
+            await app.plan_approval.reject()
+        except PlanApprovalError as exc:
+            await app.chat.send(OutgoingMessage(text=str(exc)))
+            return
+        await app.chat.send(OutgoingMessage(text="Plan rejected."))
         return
 
     if command == "/done":
@@ -63,6 +112,13 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
             await app.chat.send(OutgoingMessage(text="No active jour fixe session to close."))
             return
         plan = await app.jour_fixe.close_session()
+        await app.plan_approval.submit(plan)
+        await app.chat.send(OutgoingMessage(text=app.plan_approval.format_plan(plan)))
+        if app.settings.plan_auto_approve:
+            approved = await app.plan_approval.approve()
+            await app.chat.send(
+                OutgoingMessage(text=app.plan_approval.format_filed_summary(approved))
+            )
         log.info("jour_fixe_closed", plan_id=str(plan.id), tasks=len(plan.tasks))
         return
 

@@ -52,10 +52,11 @@ docker compose up --build
 ### Phase 1 implementation order (from ROADMAP.md)
 
 1. ~~Matrix chat adapter~~ (done)
-2. GitHub forge adapter
-3. Claude Code backend adapter
-4. Jour fixe scheduler integration (cron-triggered sessions)
-5. Budget tracking wired to SQLite store
+2. ~~GitHub forge adapter~~ (done)
+3. ~~Plan approval in chat~~ (done)
+4. Claude Code backend adapter
+5. Jour fixe scheduler integration (cron-triggered sessions)
+6. Budget tracking wired to SQLite store
 
 ### Secrets
 
