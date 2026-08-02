@@ -13,7 +13,7 @@ from sluice.models.plan import Plan
 log = structlog.get_logger()
 
 HELP_TEXT = """Sluice commands:
-  /jour-fixe  — start a jour fixe session
+  /jour-fixe  — start a jour fixe session (/jourfixe also works)
   /done       — finish the session and generate a plan
   /plan       — show the plan awaiting approval
   /approve    — approve the plan and create GitHub issues
@@ -65,7 +65,7 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         await app.chat.send(OutgoingMessage(text=HELP_TEXT))
         return
 
-    if command in {"/jour-fixe", "/start", "jour fixe"}:
+    if command in {"/jour-fixe", "/jourfixe", "/start", "jour fixe"}:
         if app.plan_approval.has_pending_plan:
             await app.chat.send(
                 OutgoingMessage(
