@@ -18,7 +18,6 @@ class CursorBackendAdapter(CLIBackendAdapter):
         cli_path: str = "agent",
         max_requests_per_window: int = 200,
         window_seconds: int = 30 * 24 * 60 * 60,
-        safety_margin: float = 0.85,
         store: SQLiteStateStore | None = None,
         dispatch_timeout_seconds: int = 3600,
         output_format: str = "text",
@@ -28,9 +27,8 @@ class CursorBackendAdapter(CLIBackendAdapter):
         super().__init__(
             adapter_id="cursor",
             cli_path=cli_path,
-            max_requests_per_window=max_requests_per_window,
+            cautious_limit=max_requests_per_window,
             window_seconds=window_seconds,
-            safety_margin=safety_margin,
             store=store,
             dispatch_timeout_seconds=dispatch_timeout_seconds,
         )

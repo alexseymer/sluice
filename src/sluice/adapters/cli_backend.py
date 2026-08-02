@@ -19,15 +19,23 @@ from sluice.store.sqlite import SQLiteStateStore
 
 log = structlog.get_logger()
 
-FALLBACK_OUTPUT_PATTERNS = tuple(
+QUOTA_OUTPUT_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
         r"rate.?limit",
         r"quota.?exceeded",
         r"usage.?limit",
+        r"too many requests",
+        r"try again later",
+    )
+)
+
+FALLBACK_OUTPUT_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
         r"fallback",
         r"degraded.?model",
-        r"try again later",
+        r"weaker model",
     )
 )
 
@@ -50,20 +58,17 @@ class CLIBackendAdapter(BackendAdapter):
         *,
         adapter_id: str,
         cli_path: str,
-        max_requests_per_window: int,
+        cautious_limit: int,
         window_seconds: int,
-        safety_margin: float = 0.85,
         store: SQLiteStateStore | None = None,
         dispatch_timeout_seconds: int = 3600,
     ) -> None:
         self._adapter_id = adapter_id
         self._cli_path = cli_path
-        self._max_requests = max_requests_per_window
+        self._cautious_limit = cautious_limit
         self._window_seconds = window_seconds
-        self._safety_margin = safety_margin
         self._store = store
         self._dispatch_timeout_seconds = dispatch_timeout_seconds
-        self._used_units = 0
         self._window_start = self._current_window_start()
         self._running_tasks: dict[str, asyncio.subprocess.Process] = {}
 
@@ -75,10 +80,24 @@ class CLIBackendAdapter(BackendAdapter):
     def cli_path(self) -> str:
         return self._cli_path
 
+    @property
+    def cautious_limit(self) -> int:
+        return self._cautious_limit
+
     async def initialize(self) -> None:
-        await self._load_usage()
+        return
 
     async def dispatch(self, task: PlanTask, *, worktree: Path) -> DispatchResult:
+        if not await self._has_headroom():
+            return DispatchResult(
+                task_id=task.id,
+                backend_id=self._adapter_id,
+                success=False,
+                error="Backend budget exhausted for current window",
+                quota_exceeded=True,
+                completed_at=datetime.now(UTC),
+            )
+
         worktree.mkdir(parents=True, exist_ok=True)
         invocation = self.build_invocation(task, worktree)
         command = [self._cli_path, *invocation.command]
@@ -111,6 +130,7 @@ class CLIBackendAdapter(BackendAdapter):
         except TimeoutError:
             process.kill()
             await process.communicate()
+            await self._record_attempt()
             return DispatchResult(
                 task_id=task.id,
                 backend_id=self._adapter_id,
@@ -124,11 +144,20 @@ class CLIBackendAdapter(BackendAdapter):
         stdout = stdout_bytes.decode(errors="replace")
         stderr = stderr_bytes.decode(errors="replace")
         combined = "\n".join(part for part in (stdout, stderr) if part)
+        state = await self._record_attempt()
+        quota_exceeded = self._detect_quota_exceeded(combined)
         fallback_detected = self._detect_fallback(combined)
-        success = process.returncode == 0 and not fallback_detected
 
-        if success:
-            await self._record_dispatch()
+        if quota_exceeded:
+            await self._record_quota_failure(state.used_units)
+            log.warning(
+                "backend_quota_exceeded",
+                backend=self._adapter_id,
+                attempt=state.used_units,
+                observed_limit=max(0, state.used_units - 1),
+            )
+
+        success = process.returncode == 0 and not quota_exceeded and not fallback_detected
 
         return DispatchResult(
             task_id=task.id,
@@ -137,23 +166,29 @@ class CLIBackendAdapter(BackendAdapter):
             output=combined,
             error=None if success else stderr or stdout or f"exit code {process.returncode}",
             fallback_detected=fallback_detected,
+            quota_exceeded=quota_exceeded,
             completed_at=datetime.now(UTC),
         )
 
     async def get_budget(self) -> BudgetSnapshot:
-        await self._refresh_window_if_needed()
-        window = self.default_budget_window()
-        used = self._used_units
-        exhausted = used >= window.effective_limit
+        state = await self._load_state()
         return BudgetSnapshot(
             backend_id=self._adapter_id,
-            used_units=used,
-            window=window,
-            is_exhausted=exhausted,
+            used_units=state.used_units,
+            window=BudgetWindow(
+                backend_id=self._adapter_id,
+                window_seconds=self._window_seconds,
+                cautious_limit=self._cautious_limit,
+                window_start=self._window_start,
+                observed_limit=state.observed_limit,
+            ),
+            is_exhausted=state.exhausted,
+            quota_exceeded=state.exhausted and state.observed_limit is not None,
         )
 
     async def detect_fallback(self) -> bool:
-        return False
+        state = await self._load_state()
+        return state.exhausted
 
     async def cancel(self, task_id: str) -> None:
         process = self._running_tasks.get(task_id)
@@ -167,9 +202,9 @@ class CLIBackendAdapter(BackendAdapter):
         return BudgetWindow(
             backend_id=self._adapter_id,
             window_seconds=self._window_seconds,
-            max_units=self._max_requests,
-            safety_margin=self._safety_margin,
+            cautious_limit=self._cautious_limit,
             window_start=self._window_start,
+            observed_limit=None,
         )
 
     def build_invocation(self, task: PlanTask, worktree: Path) -> CLIInvocation:
@@ -180,6 +215,9 @@ class CLIBackendAdapter(BackendAdapter):
         if task.description and task.description != task.title:
             return f"{task.title}\n\n{task.description}"
         return task.title
+
+    def _detect_quota_exceeded(self, output: str) -> bool:
+        return any(pattern.search(output) for pattern in QUOTA_OUTPUT_PATTERNS)
 
     def _detect_fallback(self, output: str) -> bool:
         return any(pattern.search(output) for pattern in FALLBACK_OUTPUT_PATTERNS)
@@ -194,24 +232,50 @@ class CLIBackendAdapter(BackendAdapter):
         current = self._current_window_start()
         if current != self._window_start:
             self._window_start = current
-            self._used_units = 0
-            await self._load_usage()
 
-    async def _load_usage(self) -> None:
+    async def _load_state(self):
+        from sluice.models.budget_state import BudgetState
+
+        await self._refresh_window_if_needed()
         if self._store is None:
-            return
-        used = await self._store.get_budget_usage(
+            return BudgetState(
+                backend_id=self._adapter_id,
+                window_start=self._window_start.isoformat(),
+                used_units=0,
+                cautious_limit=self._cautious_limit,
+            )
+        return await self._store.get_budget_state(
             self._adapter_id,
             self._window_start.isoformat(),
+            self._cautious_limit,
         )
-        self._used_units = used
 
-    async def _record_dispatch(self) -> None:
-        self._used_units += 1
+    async def _has_headroom(self) -> bool:
+        state = await self._load_state()
+        return state.has_headroom
+
+    async def _record_attempt(self):
         if self._store is None:
-            return
-        await self._store.record_budget_usage(
+            from sluice.models.budget_state import BudgetState
+
+            return BudgetState(
+                backend_id=self._adapter_id,
+                window_start=self._window_start.isoformat(),
+                used_units=1,
+                cautious_limit=self._cautious_limit,
+            )
+        return await self._store.record_budget_attempt(
             self._adapter_id,
             self._window_start.isoformat(),
-            self._used_units,
+            self._cautious_limit,
+        )
+
+    async def _record_quota_failure(self, failed_attempt: int) -> None:
+        if self._store is None:
+            return
+        await self._store.record_quota_limit(
+            self._adapter_id,
+            self._window_start.isoformat(),
+            self._cautious_limit,
+            failed_attempt=failed_attempt,
         )
