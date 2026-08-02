@@ -21,6 +21,7 @@ from sluice.setup.matrix_provision import (
     BotAlreadyExistsError,
     MatrixProvisionResult,
     MatrixSetupError,
+    RegistrationDisabledError,
     localpart_from_mxid,
     provision_matrix,
     verify_matrix_bot,
@@ -214,27 +215,21 @@ async def _setup_matrix(
         default=_bot_localpart_default(settings.matrix_user_id),
     )
 
-    # Only ask for registration helpers when we may need to create the bot.
-    shared_secret: str | None = None
-    registration_token: str | None = None
-    need_registration_help = not (
-        settings.matrix_access_token or settings.matrix_bot_password
+    print(
+        "\nIf the homeserver has registration closed, paste Synapse's "
+        "registration_shared_secret from homeserver.yaml."
     )
-    if need_registration_help:
-        print(
-            "\nTo create the bot without open registration, paste Synapse's "
-            "registration_shared_secret (homeserver.yaml)."
-        )
-        print("Leave blank to try open / token-based registration instead.")
-        shared_secret = _prompt_secret("registration_shared_secret (optional)") or None
-        if not shared_secret:
-            registration_token = (
-                _prompt(
-                    "Registration token (optional, if your server requires one)",
-                    default="",
-                )
-                or None
+    print("Leave blank to reuse an existing bot via password/token instead.")
+    shared_secret = _prompt_secret("registration_shared_secret (optional)") or None
+    registration_token: str | None = None
+    if not shared_secret:
+        registration_token = (
+            _prompt(
+                "Registration token (optional)",
+                default="",
             )
+            or None
+        )
 
     bot_password = settings.matrix_bot_password
     existing_token = settings.matrix_access_token
@@ -252,27 +247,33 @@ async def _setup_matrix(
             existing_room_id=existing_room,
             bot_password=bot_password,
         )
-    except BotAlreadyExistsError as exc:
+    except (BotAlreadyExistsError, RegistrationDisabledError) as exc:
         print(f"\n{exc}")
+        if not shared_secret:
+            print(
+                "Provide the Synapse registration_shared_secret to create the bot, "
+                "or log into an existing bot account."
+            )
+            shared_secret = _prompt_secret("registration_shared_secret (optional)") or None
         bot_password = _prompt_secret(
-            "Bot password (leave blank to paste a token instead)",
+            "Existing bot password (leave blank to paste a token instead)",
             saved=settings.matrix_bot_password,
         )
         token_override = None
-        if not bot_password:
+        if not bot_password and not shared_secret:
             token_override = _prompt(
                 "Bot access token",
                 default=settings.matrix_access_token,
             )
             if not token_override:
                 raise MatrixSetupError(
-                    "Need the existing bot password or access token to continue."
+                    "Need registration_shared_secret, bot password, or access token."
                 ) from exc
         result = await provision_matrix(
             homeserver=homeserver,
             operator_user=operator,
             operator_password=password,
-            shared_secret=None,
+            shared_secret=shared_secret,
             registration_token=None,
             bot_localpart=bot_localpart or "sluice-bot",
             existing_bot_token=token_override or existing_token,

@@ -25,6 +25,17 @@ class BotAlreadyExistsError(MatrixSetupError):
         super().__init__(f"Bot user @{localpart} already exists on the homeserver")
 
 
+class RegistrationDisabledError(MatrixSetupError):
+    """Homeserver rejected open registration."""
+
+    def __init__(self, localpart: str) -> None:
+        self.localpart = localpart
+        super().__init__(
+            f"Open registration is disabled; cannot create @{localpart} without "
+            "Synapse registration_shared_secret (or an existing bot password/token)."
+        )
+
+
 @dataclass(frozen=True)
 class MatrixProvisionResult:
     homeserver: str
@@ -69,6 +80,15 @@ def is_user_already_taken(message: str) -> bool:
         "already taken" in lower
         or "user_in_use" in lower
         or "m_user_in_use" in lower
+    )
+
+
+def is_registration_disabled(message: str) -> bool:
+    lower = message.lower()
+    return (
+        "registration has been disabled" in lower
+        or "registration is disabled" in lower
+        or "registrations are disabled" in lower
     )
 
 
@@ -200,6 +220,8 @@ async def register_bot_shared_secret(
         message = _error_message(response)
         if is_user_already_taken(message):
             raise BotAlreadyExistsError(username)
+        if is_registration_disabled(message):
+            raise RegistrationDisabledError(username)
         raise MatrixSetupError(f"Bot registration failed ({response.status_code}): {message}")
     payload = response.json()
     return str(payload["user_id"]), str(payload["access_token"])
@@ -245,6 +267,8 @@ async def register_bot_client_api(
             isinstance(payload, dict) and payload.get("errcode") == "M_USER_IN_USE"
         ):
             raise BotAlreadyExistsError(username)
+        if is_registration_disabled(message):
+            raise RegistrationDisabledError(username)
         if response.status_code == 401 and "session" in payload:
             session = str(payload["session"])
             flows = payload.get("flows") or []
@@ -294,6 +318,7 @@ async def resolve_bot_account(
 ) -> tuple[str, str, str | None]:
     """Register bot or reuse an existing account. Returns (user_id, token, password)."""
     new_password = generate_bot_password()
+    register_error: BotAlreadyExistsError | RegistrationDisabledError | None = None
     try:
         if shared_secret:
             bot_id, bot_token = await register_bot_shared_secret(
@@ -312,8 +337,8 @@ async def resolve_bot_account(
                 registration_token=registration_token,
             )
         return bot_id, bot_token, new_password
-    except BotAlreadyExistsError:
-        pass
+    except (BotAlreadyExistsError, RegistrationDisabledError) as exc:
+        register_error = exc
 
     if existing_bot_token:
         user_id = await whoami(
@@ -331,6 +356,11 @@ async def resolve_bot_account(
         )
         return bot_id, bot_token, bot_password
 
+    # Surface the original failure so the CLI can prompt for shared secret
+    # or existing bot credentials (not a misleading "already exists" when
+    # open registration is simply closed).
+    if register_error is not None:
+        raise register_error
     raise BotAlreadyExistsError(bot_localpart)
 
 
