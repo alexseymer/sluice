@@ -104,7 +104,9 @@ async def test_dispatch_runs_cli_and_records_budget(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_dispatch_detects_rate_limit_fallback(tmp_path) -> None:
-    adapter = ClaudeCodeBackendAdapter(dispatch_timeout_seconds=5)
+    store = SQLiteStateStore(tmp_path / "sluice.db")
+    await store.initialize()
+    adapter = ClaudeCodeBackendAdapter(store=store, dispatch_timeout_seconds=5)
 
     process = AsyncMock()
     process.returncode = 0
@@ -117,4 +119,4 @@ async def test_dispatch_detects_rate_limit_fallback(tmp_path) -> None:
         result = await adapter.dispatch(PlanTask(title="Task"), worktree=tmp_path / "wt")
 
     assert result.success is False
-    assert result.fallback_detected is True
+    assert result.quota_exceeded is True

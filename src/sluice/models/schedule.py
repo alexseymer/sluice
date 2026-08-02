@@ -26,4 +26,5 @@ class DispatchResult(BaseModel):
     output: str = ""
     error: str | None = None
     fallback_detected: bool = False
+    quota_exceeded: bool = False
     completed_at: datetime | None = None

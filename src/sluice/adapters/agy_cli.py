@@ -18,7 +18,6 @@ class AgyBackendAdapter(CLIBackendAdapter):
         cli_path: str = "agy",
         max_requests_per_window: int = 20,
         window_seconds: int = 24 * 60 * 60,
-        safety_margin: float = 0.85,
         store: SQLiteStateStore | None = None,
         dispatch_timeout_seconds: int = 3600,
         mode: str = "accept-edits",
@@ -27,9 +26,8 @@ class AgyBackendAdapter(CLIBackendAdapter):
         super().__init__(
             adapter_id="agy",
             cli_path=cli_path,
-            max_requests_per_window=max_requests_per_window,
+            cautious_limit=max_requests_per_window,
             window_seconds=window_seconds,
-            safety_margin=safety_margin,
             store=store,
             dispatch_timeout_seconds=dispatch_timeout_seconds,
         )

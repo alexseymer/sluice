@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class BudgetWindow(BaseModel):
@@ -12,13 +12,16 @@ class BudgetWindow(BaseModel):
 
     backend_id: str
     window_seconds: int
-    max_units: int
-    safety_margin: float = Field(default=0.85, ge=0.0, le=1.0)
+    cautious_limit: int
     window_start: datetime | None = None
+    observed_limit: int | None = None
 
     @property
     def effective_limit(self) -> int:
-        return int(self.max_units * self.safety_margin)
+        """Hard limit if learned, otherwise the cautious starting point."""
+        if self.observed_limit is not None:
+            return self.observed_limit
+        return self.cautious_limit
 
 
 class BudgetSnapshot(BaseModel):
@@ -28,12 +31,29 @@ class BudgetSnapshot(BaseModel):
     used_units: int
     window: BudgetWindow
     is_exhausted: bool = False
-    fallback_detected: bool = False
+    quota_exceeded: bool = False
+
+    @property
+    def is_probing(self) -> bool:
+        """Attempting beyond the cautious limit to discover the real cap."""
+        return (
+            not self.is_exhausted
+            and self.window.observed_limit is None
+            and self.used_units >= self.window.cautious_limit
+        )
 
     @property
     def remaining_units(self) -> int:
-        return max(0, self.window.effective_limit - self.used_units)
+        if self.window.observed_limit is not None:
+            return max(0, self.window.observed_limit - self.used_units)
+        if self.used_units < self.window.cautious_limit:
+            return self.window.cautious_limit - self.used_units
+        return 0
 
     @property
     def has_headroom(self) -> bool:
-        return not self.is_exhausted and self.remaining_units > 0
+        if self.is_exhausted:
+            return False
+        if self.window.observed_limit is not None:
+            return self.used_units < self.window.observed_limit
+        return True

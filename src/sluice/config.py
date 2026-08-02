@@ -48,12 +48,12 @@ class SluiceSettings(BaseSettings):
     # AI backends — comma-separated list: claude_code,cursor,agy
     ai_backends: str = Field(default="claude_code,cursor,agy")
     default_backend: str | None = None
-    budget_safety_margin: float = Field(default=0.85)
+    budget_safety_margin: float = Field(default=0.85)  # legacy; probing ignores this
     backend_dispatch_timeout_seconds: int = Field(default=3600)
 
     # Claude Code
     claude_code_cli_path: str = Field(default="claude")
-    claude_code_max_requests: int = Field(default=50)
+    claude_code_max_requests: int = Field(default=50)  # cautious starting point; probed empirically
     claude_code_window_seconds: int = Field(default=5 * 60 * 60)
     claude_code_skip_permissions: bool = Field(default=True)
 
