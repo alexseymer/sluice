@@ -18,6 +18,7 @@ from sluice.setup.github_oauth import (
 from sluice.setup.matrix_provision import (
     provision_matrix,
     synapse_registration_mac,
+    verify_matrix_bot,
 )
 
 
@@ -198,3 +199,75 @@ async def test_provision_matrix_shared_secret() -> None:
     assert result.bot_access_token == "bot_token"
     assert result.room_id == "!abc:example.com"
     assert result.allowed_sender == "@you:example.com"
+    assert result.bot_password is not None
+
+
+@pytest.mark.asyncio
+async def test_provision_matrix_reuses_existing_bot_via_password() -> None:
+    hs = "https://matrix.example.com"
+    logins: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith("/_matrix/client/v3/login"):
+            body = request.read().decode()
+            logins.append(body)
+            if '"user": "bot"' in body or '"user":"bot"' in body:
+                return httpx.Response(
+                    200,
+                    json={"user_id": "@bot:example.com", "access_token": "bot_token"},
+                )
+            return httpx.Response(
+                200,
+                json={"user_id": "@you:example.com", "access_token": "user_token"},
+            )
+        if url.endswith("/_matrix/client/v3/register"):
+            return httpx.Response(
+                400,
+                json={"errcode": "M_USER_IN_USE", "error": "User ID already taken."},
+            )
+        if url.endswith("/_matrix/client/v3/createRoom"):
+            return httpx.Response(200, json={"room_id": "!xyz:example.com"})
+        if "/send/m.room.message" in url:
+            return httpx.Response(200, json={"event_id": "$1"})
+        return httpx.Response(404, json={"errcode": "M_NOT_FOUND"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await provision_matrix(
+            homeserver=hs,
+            operator_user="@you:example.com",
+            operator_password="secret",
+            bot_localpart="bot",
+            bot_password="bot-pass",
+            client=client,
+        )
+    assert result.bot_user_id == "@bot:example.com"
+    assert result.bot_access_token == "bot_token"
+    assert result.room_id == "!xyz:example.com"
+    assert any("bot-pass" in entry for entry in logins)
+
+
+@pytest.mark.asyncio
+async def test_verify_matrix_bot_ok() -> None:
+    hs = "https://matrix.example.com"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith("/account/whoami"):
+            return httpx.Response(200, json={"user_id": "@bot:example.com"})
+        if url.endswith("/joined_rooms"):
+            return httpx.Response(200, json={"joined_rooms": ["!abc:example.com"]})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        user_id = await verify_matrix_bot(
+            homeserver=hs,
+            access_token="tok",
+            room_id="!abc:example.com",
+            expected_localpart="bot",
+            client=client,
+        )
+    assert user_id == "@bot:example.com"
+
