@@ -2,39 +2,80 @@
 
 ## Cursor Cloud specific instructions
 
-### Current repository state (read this first)
+### Current repository state
 
-This repo is in the **early design phase** and is currently **documentation-only**. There is
-no runnable code yet. The tracked files are only:
+Sluice is in **Phase 1** — a runnable Python package with core interfaces and Docker
+Compose bring-up. The Matrix chat adapter and GitHub forge adapter are implemented;
+plan approval in chat files issues on `/approve`. Claude Code adapter remains a stub.
 
-- `README.md`, `ROADMAP.md`, `SECURITY.md`, `docs/prd.md`, `LICENSE`, `.gitignore`
+### Project layout
 
-There are **no** dependency manifests (`requirements.txt` / `pyproject.toml` / `package.json`),
-**no** build system, **no** tests, and **no** app entrypoint. As stated in `README.md`, the
-project is "Not yet runnable." Consequently there is currently nothing to lint, test, build, or
-run, and no service to start.
+```
+src/sluice/
+  adapters/     # Protocol interfaces + stub implementations (matrix_chat, github_forge, claude_code)
+  core/         # Jour fixe, planner, dependency graph, scheduler, budget manager
+  models/       # Pydantic domain models
+  store/        # SQLite persistence
+  config.py     # Settings via env vars (prefix: SLUICE_)
+  __main__.py   # CLI entrypoint
+tests/
+docker-compose.yml
+Dockerfile
+.env.example
+```
 
-### Intended product (per `docs/prd.md`)
+### Commands
 
-"Sluice" is planned as a **Python application** deployed as a **Docker container**, orchestrated
-via `docker compose up` (PRD FR24). The planned stack: a Python core (jour-fixe manager, planner,
-dependency-graph engine, scheduler/budget manager) plus a state datastore (SQLite or Postgres),
-with pluggable adapters for Git forges (GitHub/GitLab/OneDev), AI CLI backends
-(Claude Code/Cursor/Agy/Codex), and chat backends (Signal/Matrix/Telegram). None of this is
-implemented yet — treat `docs/prd.md` and `ROADMAP.md` as intent, not current behavior.
+```bash
+# Install (editable)
+pip install -e ".[dev]"
 
-### Environment baseline (already present on the VM)
+# Lint
+ruff check src tests
 
-- Python 3.12 (`python3`, `pip3`) — note there is no `python` alias; use `python3`.
+# Test
+pytest
+
+# Run locally
+sluice
+
+# Docker
+docker compose up --build
+```
+
+### Environment baseline
+
+- Python 3.12 (`python3`, `pip3`) — no `python` alias; use `python3`.
 - Node.js 22, GNU Make 4.3.
-- **Docker is NOT installed.** When the planned Docker Compose stack lands, Docker must be
-  installed before `docker compose up` will work (it is intentionally not part of the startup
-  update script today, since there is nothing to run yet).
+- Docker may need to be installed for `docker compose up` (not pre-installed on all VMs).
 
-### When code lands (guidance for future agents)
+### Cloud environment (`.cursor/environment.json`)
 
-- The startup update script guards for Python manifests: it installs from `requirements.txt`
-  and/or `pyproject.toml` if/when they appear, and is a safe no-op until then. Extend it once the
-  real dependency/build tooling is chosen.
-- Expect the run command to become `docker compose up` per the PRD; revisit Docker installation
-  and service startup at that point.
+On VM boot, Cursor runs the `install` script from `.cursor/environment.json` after
+pulling the latest changes. It is idempotent and guards for whichever Python manifests
+exist (`requirements.txt`, `requirements-dev.txt`, `pyproject.toml`). Agents should not
+need to reinstall manually unless dependencies change mid-run.
+
+### Phase 1 implementation order (from ROADMAP.md)
+
+1. ~~Matrix chat adapter~~ (done)
+2. ~~GitHub forge adapter~~ (done)
+3. ~~Plan approval in chat~~ (done)
+4. ~~AI CLI backends (Claude Code, Cursor, agy)~~ (done)
+5. Jour fixe scheduler integration (cron-triggered sessions)
+6. ~~Budget tracking wired to SQLite store~~ (done)
+
+AI CLI backends: Claude Code (`claude`), Cursor (`agent`), and Antigravity (`agy`).
+Enable via `SLUICE_AI_BACKENDS=claude_code,cursor,agy`. Tasks can set `backend_id`
+or Sluice picks the first backend with budget headroom.
+
+### Secrets
+
+All credentials via `SLUICE_*` env vars — see `.env.example`. Never log or commit secrets.
+
+### Pull requests
+
+Use **`ManagePullRequest`** to create and update PRs — not `gh pr create` / `gh pr edit`
+(the cloud installation token lacks PR/issue API scopes). Commit, push, then
+`create_pr` / `update_pr`. Standard PRs should note assignee **`alexseymer`** in the body
+or summary for manual assignment on GitHub. See `.cursor/rules/pull-requests.mdc`.

@@ -1,0 +1,32 @@
+---
+description: Pull request conventions for Sluice — Cursor integration workflow
+alwaysApply: true
+---
+
+# Pull requests
+
+Cloud agents create and update pull requests with the **`ManagePullRequest`** tool only.
+Do **not** use `gh pr create`, `gh pr edit`, or other `gh` API commands for PRs — the
+Cursor GitHub installation token can push code but returns 403 for most PR/issue API calls.
+
+## Create
+
+1. Commit and push the branch (`git push -u origin <branch>`).
+2. Call `ManagePullRequest` with `action: create_pr`, plus `title`, `body`, `branch_name`,
+   and `base_branch` (default `main`).
+3. Open as **draft** unless the user explicitly asks otherwise (`draft: true` by default).
+
+## Update
+
+After additional commits or before finishing a turn, call `ManagePullRequest` with
+`action: update_pr` and `branch_name` (or `pr_url`) to refresh title/body if needed.
+
+## Assignee
+
+Every standard PR should be assigned to **`alexseymer`**. The integration cannot set
+assignees via API — mention the assignee in the PR body or turn summary so it can be
+applied on GitHub (PR sidebar → Assignees).
+
+## Branch naming
+
+Cloud agent branches use the `cursor/<descriptive-name>-203b` pattern.

@@ -6,7 +6,7 @@ You talk to Sluice once a day (or on whatever cadence you set) in a short **jour
 
 ## Status
 
-Early design phase. See [`docs/prd.md`](docs/prd.md) for the full product spec, and [`ROADMAP.md`](ROADMAP.md) for what's being built first.
+Phase 1 scaffold in place — Python package, core interfaces, stub adapters, and Docker Compose. Adapters are not yet wired to real services. See [`docs/prd.md`](docs/prd.md) for the full product spec, and [`ROADMAP.md`](ROADMAP.md) for what's being built first.
 
 ## Why
 
@@ -26,7 +26,21 @@ Sluice is privacy-first by design on the chat layer specifically — no third-pa
 
 ## Getting started
 
-Not yet runnable — this repo currently holds the design docs and roadmap while the core is being built. Follow the [roadmap](ROADMAP.md) for progress.
+```bash
+# Install
+pip install -e ".[dev]"
+
+# Copy and configure secrets
+cp .env.example .env
+
+# Run locally (starts, logs config, exits — daemon loop coming in Phase 1)
+sluice
+
+# Or via Docker
+docker compose up --build
+```
+
+See [`AGENTS.md`](AGENTS.md) for project layout and development commands.
 
 ## License
 
