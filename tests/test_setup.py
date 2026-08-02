@@ -249,6 +249,88 @@ async def test_provision_matrix_reuses_existing_bot_via_password() -> None:
 
 
 @pytest.mark.asyncio
+async def test_provision_matrix_registration_disabled_reuses_password() -> None:
+    hs = "https://matrix.example.com"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith("/_matrix/client/v3/login"):
+            body = request.read().decode()
+            if "sluice-bot" in body:
+                return httpx.Response(
+                    200,
+                    json={
+                        "user_id": "@sluice-bot:example.com",
+                        "access_token": "bot_token",
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={"user_id": "@you:example.com", "access_token": "user_token"},
+            )
+        if url.endswith("/_matrix/client/v3/register"):
+            return httpx.Response(
+                403,
+                json={
+                    "errcode": "M_FORBIDDEN",
+                    "error": "Registration has been disabled",
+                },
+            )
+        if url.endswith("/_matrix/client/v3/createRoom"):
+            return httpx.Response(200, json={"room_id": "!reg:example.com"})
+        if "/send/m.room.message" in url:
+            return httpx.Response(200, json={"event_id": "$1"})
+        return httpx.Response(404, json={"errcode": "M_NOT_FOUND"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await provision_matrix(
+            homeserver=hs,
+            operator_user="@you:example.com",
+            operator_password="secret",
+            bot_localpart="sluice-bot",
+            bot_password="existing-bot-pass",
+            client=client,
+        )
+    assert result.bot_user_id == "@sluice-bot:example.com"
+    assert result.bot_access_token == "bot_token"
+
+
+@pytest.mark.asyncio
+async def test_resolve_bot_registration_disabled_without_creds() -> None:
+    from sluice.setup.matrix_provision import (
+        RegistrationDisabledError,
+        resolve_bot_account,
+    )
+
+    hs = "https://matrix.example.com"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("/_matrix/client/v3/register"):
+            return httpx.Response(
+                403,
+                json={
+                    "errcode": "M_FORBIDDEN",
+                    "error": "Registration has been disabled",
+                },
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(RegistrationDisabledError):
+            await resolve_bot_account(
+                client,
+                homeserver=hs,
+                bot_localpart="sluice-bot",
+                shared_secret=None,
+                registration_token=None,
+                existing_bot_token=None,
+                bot_password=None,
+            )
+
+
+@pytest.mark.asyncio
 async def test_verify_matrix_bot_ok() -> None:
     hs = "https://matrix.example.com"
 
