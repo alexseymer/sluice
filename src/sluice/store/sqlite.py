@@ -85,3 +85,19 @@ class SQLiteStateStore:
                 (backend_id, window_start, used_units),
             )
             await db.commit()
+
+    async def get_budget_usage(self, backend_id: str, window_start: str) -> int:
+        async with (
+            aiosqlite.connect(self._db_path) as db,
+            db.execute(
+                """
+                SELECT used_units FROM budget_usage
+                WHERE backend_id = ? AND window_start = ?
+                """,
+                (backend_id, window_start),
+            ) as cursor,
+        ):
+            row = await cursor.fetchone()
+            if row is None:
+                return 0
+            return int(row[0])

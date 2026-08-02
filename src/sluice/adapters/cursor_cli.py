@@ -1,4 +1,4 @@
-"""Claude Code CLI backend adapter."""
+"""Cursor Agent CLI backend adapter."""
 
 from __future__ import annotations
 
@@ -9,22 +9,24 @@ from sluice.models.plan import PlanTask
 from sluice.store.sqlite import SQLiteStateStore
 
 
-class ClaudeCodeBackendAdapter(CLIBackendAdapter):
-    """Dispatches tasks to the Claude Code CLI in print mode."""
+class CursorBackendAdapter(CLIBackendAdapter):
+    """Dispatches tasks to the Cursor Agent CLI (`agent`) in print mode."""
 
     def __init__(
         self,
         *,
-        cli_path: str = "claude",
-        max_requests_per_window: int = 50,
-        window_seconds: int = 5 * 60 * 60,
+        cli_path: str = "agent",
+        max_requests_per_window: int = 200,
+        window_seconds: int = 30 * 24 * 60 * 60,
         safety_margin: float = 0.85,
         store: SQLiteStateStore | None = None,
         dispatch_timeout_seconds: int = 3600,
-        skip_permissions: bool = True,
+        output_format: str = "text",
+        force: bool = True,
+        trust_workspace: bool = True,
     ) -> None:
         super().__init__(
-            adapter_id="claude_code",
+            adapter_id="cursor",
             cli_path=cli_path,
             max_requests_per_window=max_requests_per_window,
             window_seconds=window_seconds,
@@ -32,13 +34,24 @@ class ClaudeCodeBackendAdapter(CLIBackendAdapter):
             store=store,
             dispatch_timeout_seconds=dispatch_timeout_seconds,
         )
-        self._skip_permissions = skip_permissions
+        self._output_format = output_format
+        self._force = force
+        self._trust_workspace = trust_workspace
 
     def build_invocation(self, task: PlanTask, worktree: Path) -> CLIInvocation:
         prompt = self.build_task_prompt(task)
-        command = ["-p", prompt]
-        if self._skip_permissions:
-            command.insert(0, "--dangerously-skip-permissions")
+        command = [
+            "-p",
+            "--output-format",
+            self._output_format,
+            "--workspace",
+            str(worktree),
+        ]
+        if self._force:
+            command.append("--force")
+        if self._trust_workspace:
+            command.append("--trust")
+        command.append(prompt)
 
         return CLIInvocation(
             command=command,

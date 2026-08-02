@@ -24,10 +24,12 @@ class Scheduler:
         backends: dict[str, BackendAdapter],
         budget_manager: BudgetManager,
         worktree_base: Path,
+        default_backend: str | None = None,
     ) -> None:
         self._backends = backends
         self._budget = budget_manager
         self._worktree_base = worktree_base
+        self._default_backend = default_backend
         self._queue: list[ScheduleSlot] = []
 
     async def schedule_plan(self, plan: Plan) -> list[ScheduleSlot]:
@@ -37,7 +39,10 @@ class Scheduler:
         ready = graph.ready_tasks()
         slots: list[ScheduleSlot] = []
         for task in ready:
-            backend_id = task.backend_id or next(iter(self._backends))
+            backend_id = task.backend_id or await self._pick_backend(task)
+            if backend_id is None:
+                log.warning("no_backend_available", task_id=str(task.id))
+                continue
             slot = ScheduleSlot(
                 backend_id=backend_id,
                 task_id=task.id,
@@ -46,6 +51,19 @@ class Scheduler:
             slots.append(slot)
         self._queue.extend(slots)
         return slots
+
+    async def _pick_backend(self, _task: PlanTask) -> str | None:
+        if (
+            self._default_backend
+            and self._default_backend in self._backends
+            and await self._budget.can_dispatch(self._default_backend)
+        ):
+            return self._default_backend
+
+        for backend_id in self._backends:
+            if await self._budget.can_dispatch(backend_id):
+                return backend_id
+        return None
 
     async def dispatch_next(self, plan: Plan) -> DispatchResult | None:
         """Dispatch the next queued task if budget allows."""
