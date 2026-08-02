@@ -49,6 +49,13 @@ docker compose up --build
 - Node.js 22, GNU Make 4.3.
 - Docker may need to be installed for `docker compose up` (not pre-installed on all VMs).
 
+### Cloud environment (`.cursor/environment.json`)
+
+On VM boot, Cursor runs the `install` script from `.cursor/environment.json` after
+pulling the latest changes. It is idempotent and guards for whichever Python manifests
+exist (`requirements.txt`, `requirements-dev.txt`, `pyproject.toml`). Agents should not
+need to reinstall manually unless dependencies change mid-run.
+
 ### Phase 1 implementation order (from ROADMAP.md)
 
 1. ~~Matrix chat adapter~~ (done)
