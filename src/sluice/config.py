@@ -94,9 +94,10 @@ class SluiceSettings(BaseSettings):
 
     @property
     def sqlite_path(self) -> Path:
-        if self.database_url.startswith("sqlite"):
+        if self.database_url.startswith("sqlite") and ":///" in self.database_url:
             # sqlite+aiosqlite:////data/sluice.db -> /data/sluice.db
-            return Path(self.database_url.rsplit("/", maxsplit=1)[-1])
+            # sqlite+aiosqlite:///.sluice-data/sluice.db -> .sluice-data/sluice.db
+            return Path(self.database_url.split(":///", maxsplit=1)[1])
         return self.data_dir / "sluice.db"
 
     def enabled_backend_ids(self) -> list[str]:
