@@ -1,12 +1,31 @@
 # Sluice
 
+[![CI](https://github.com/alexseymer/sluice/actions/workflows/ci.yml/badge.svg)](https://github.com/alexseymer/sluice/actions/workflows/ci.yml)
+[![Docker](https://github.com/alexseymer/sluice/actions/workflows/docker.yml/badge.svg)](https://github.com/alexseymer/sluice/actions/workflows/docker.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GHCR](https://img.shields.io/badge/container-ghcr.io%2Falexseymer%2Fsluice-2496ED?logo=docker&logoColor=white)](https://github.com/alexseymer/sluice/pkgs/container/sluice)
+
 **Sluice** paces your AI coding CLI usage (Claude Code, Codex, Cursor, Agy, and others) across the day so you stay under subscription rate limits — instead of bursting through your quota in one session and getting silently downgraded to a weaker fallback model, or paying overage rates on metered API billing.
 
-You talk to Sluice once a day (or on whatever cadence you set) in a short **jour fixe** — a chat session where you discuss what needs doing. Sluice turns that into a dependency-ordered plan, files it as issues on your Git forge of choice (GitHub, GitLab, or OneDev), and works through the backlog throughout the day, scheduling AI CLI calls to stay within each tool's budget. You get pinged with status, blockers, and anything that needs a decision — over Signal, Telegram, or Matrix, all privacy-first.
+You talk to Sluice once a day (or on whatever cadence you set) in a short **jour fixe** — a chat session where you discuss what needs doing. Sluice turns that into a dependency-ordered plan, files it as issues on your Git forge of choice (GitHub today; GitLab and OneDev planned), and works through the backlog throughout the day, scheduling AI CLI calls to stay within each tool's budget. You get pinged with status, blockers, and anything that needs a decision — over Matrix today (Signal and Telegram planned), all privacy-first.
 
 ## Status
 
-Phase 1 is runnable via **Docker Compose** — Matrix chat, GitHub issues, CLI backend adapters, jour fixe scheduling, and an interactive setup wizard. See [`docs/prd.md`](docs/prd.md) for the product spec and [`ROADMAP.md`](ROADMAP.md) for what's next.
+**Phase 1 is complete** and runnable via **Docker Compose**. The full loop works: cron-triggered jour fixe → conversational planning → `/approve` to file GitHub issues → background dispatch with dependency ordering → budget pacing and backend failover → forge sync when issues close.
+
+| Component | Status |
+|-----------|--------|
+| Matrix chat + jour fixe commands | ✅ |
+| Conversational jour fixe (CLI or LLM API) | ✅ |
+| Planner → dependency-ordered tasks | ✅ |
+| GitHub issues + dependency links | ✅ |
+| AI backends (Claude Code, Cursor, Agy, Codex) | ✅ |
+| Budget probing + fallback failover | ✅ |
+| Interactive `sluice setup` wizard | ✅ |
+| Signal / Telegram / GitLab / OneDev | 🔜 planned |
+
+See [`docs/prd.md`](docs/prd.md) for the product spec and [`ROADMAP.md`](ROADMAP.md) for what's next.
 
 ## Why
 
@@ -14,11 +33,11 @@ AI coding subscriptions have usage windows. Burn through them in a burst and you
 
 ## How it works
 
-1. **Jour fixe** — a conversational chat (Matrix) that starts from status quo and problems since last time, then discusses how to handle them. Messages are passed through to your configured AI CLI so it feels like talking to the tool directly.
+1. **Jour fixe** — a conversational Matrix chat that starts from status quo and problems since last time, then discusses how to handle them. Messages go through your configured AI CLI (on the host) or an OpenAI-compatible LLM API (recommended in Docker).
 2. **Plan** — when you say you're done, Sluice summarizes the discussion into a dependency-ordered task plan for your approval.
-3. **Issues** — approved tasks are filed on your Git forge, with explicit dependency links.
-4. **Scheduling** — Sluice dispatches unblocked tasks to specialized AI CLI backends throughout the day, respecting each one's budget/rate limits.
-5. **Check-ins** — async updates over Signal, Telegram, or Matrix; you can query status or interrupt at any time outside the jour fixe.
+3. **Issues** — approved tasks are filed on GitHub, with explicit dependency links.
+4. **Scheduling** — Sluice dispatches unblocked tasks to AI CLI backends throughout the day, respecting each one's budget/rate limits and failing over when quota or fallback-model degradation is detected.
+5. **Check-ins** — async dispatch notifications over Matrix; `/status`, `/plan`, and `/help` work outside jour fixe.
 
 Set `SLUICE_JOUR_FIXE_LLM_*` (OpenAI-compatible chat API) for Matrix conversation when running in Docker — Linux containers cannot execute Windows Cursor/Claude CLIs. Optionally set `SLUICE_PLANNER_BACKEND` for CLI-based planning/dispatch on hosts where those tools exist.
 
