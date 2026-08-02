@@ -26,7 +26,9 @@ class SluiceSettings(BaseSettings):
     # Jour fixe
     jour_fixe_cron: str = Field(default="0 9 * * *")
     jour_fixe_timeout_minutes: int = Field(default=60)
+    jour_fixe_scheduler_enabled: bool = Field(default=True)
     plan_auto_approve: bool = Field(default=False)
+    dispatch_poll_seconds: int = Field(default=30)
 
     # Chat (Phase 1: matrix or signal)
     chat_backend: str = Field(default="matrix")

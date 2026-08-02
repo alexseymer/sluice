@@ -11,6 +11,8 @@ from sluice import __version__
 from sluice.config import load_settings
 from sluice.core.app import SluiceApp
 from sluice.core.chat_loop import run_chat_loop
+from sluice.core.dispatch_loop import run_dispatch_loop
+from sluice.core.jour_fixe_scheduler import run_jour_fixe_scheduler
 
 log = structlog.get_logger()
 
@@ -28,7 +30,10 @@ async def _run() -> int:
         next_jour_fixe=str(app.jour_fixe.next_scheduled_at()),
     )
     try:
-        await run_chat_loop(app)
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(run_jour_fixe_scheduler(app), name="jour-fixe-scheduler")
+            tg.create_task(run_dispatch_loop(app), name="dispatch-loop")
+            tg.create_task(run_chat_loop(app), name="chat-loop")
     finally:
         await app.stop()
     return 0

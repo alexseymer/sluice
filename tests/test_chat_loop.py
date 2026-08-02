@@ -31,6 +31,12 @@ def app() -> MagicMock:
     mock.plan_approval.reject = AsyncMock()
     mock.plan_approval.format_plan = MagicMock(return_value="Plan summary")
     mock.plan_approval.format_filed_summary = MagicMock(return_value="Issues created")
+    mock.scheduler = MagicMock()
+    mock.scheduler.schedule_plan = AsyncMock(return_value=[])
+    mock.store = AsyncMock()
+    mock.store.save_plan = AsyncMock()
+    mock.chat.is_configured = True
+    mock.active_plan = None
     mock.settings = MagicMock()
     mock.settings.plan_auto_approve = False
     return mock
@@ -78,6 +84,8 @@ async def test_approve_files_plan(app: MagicMock) -> None:
     await handle_message(app, IncomingMessage(text="/approve", sender="@you:example.com"))
 
     app.plan_approval.approve.assert_awaited_once()
+    app.scheduler.schedule_plan.assert_awaited_once_with(plan)
+    assert app.active_plan is plan
     assert app.chat.send.await_args.args[0].text == "Issues created"
 
 

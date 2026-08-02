@@ -31,14 +31,25 @@ class Scheduler:
         self._worktree_base = worktree_base
         self._default_backend = default_backend
         self._queue: list[ScheduleSlot] = []
+        self._queued_task_ids: set[UUID] = set()
+
+    @property
+    def has_pending(self) -> bool:
+        return bool(self._queue)
 
     async def schedule_plan(self, plan: Plan) -> list[ScheduleSlot]:
+        """Enqueue ready tasks that are not already queued."""
+        return await self.schedule_ready_tasks(plan)
+
+    async def schedule_ready_tasks(self, plan: Plan) -> list[ScheduleSlot]:
         """Build a dispatch queue from ready tasks in the plan."""
         graph = DependencyGraph(plan)
         graph.validate()
         ready = graph.ready_tasks()
         slots: list[ScheduleSlot] = []
         for task in ready:
+            if task.id in self._queued_task_ids:
+                continue
             backend_id = task.backend_id or await self._pick_backend()
             if backend_id is None:
                 log.warning("no_backend_available", task_id=str(task.id))
@@ -49,6 +60,7 @@ class Scheduler:
                 scheduled_at=plan.created_at,
             )
             slots.append(slot)
+            self._queued_task_ids.add(task.id)
         self._queue.extend(slots)
         return slots
 
@@ -69,9 +81,9 @@ class Scheduler:
             return None
 
         slot = self._queue[0]
-        task = self._find_task(plan, slot.task_id)
+        task = self.find_task(plan, slot.task_id)
         if task is None:
-            self._queue.pop(0)
+            self._dequeue(slot.task_id)
             return None
 
         worktree = self._worktree_base / str(task.id)
@@ -102,17 +114,24 @@ class Scheduler:
                 )
                 continue
 
-            self._queue.pop(0)
+            self._dequeue(slot.task_id)
             task.status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
             task.backend_id = backend_id
             return result
 
-        self._queue.pop(0)
+        self._dequeue(slot.task_id)
         task.status = TaskStatus.FAILED
         return last_result
 
+    def _dequeue(self, task_id: UUID) -> None:
+        if self._queue and self._queue[0].task_id == task_id:
+            self._queue.pop(0)
+        else:
+            self._queue = [slot for slot in self._queue if slot.task_id != task_id]
+        self._queued_task_ids.discard(task_id)
+
     @staticmethod
-    def _find_task(plan: Plan, task_id: UUID) -> PlanTask | None:
+    def find_task(plan: Plan, task_id: UUID) -> PlanTask | None:
         for task in plan.tasks:
             if task.id == task_id:
                 return task

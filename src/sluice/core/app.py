@@ -13,6 +13,7 @@ from sluice.core.jour_fixe import JourFixeManager
 from sluice.core.plan_approval import PlanApprovalManager
 from sluice.core.planner import Planner
 from sluice.core.scheduler import Scheduler
+from sluice.models.plan import Plan
 from sluice.store.sqlite import SQLiteStateStore
 
 log = structlog.get_logger()
@@ -46,6 +47,7 @@ class SluiceApp:
             store=self.store,
             auto_approve=settings.plan_auto_approve,
         )
+        self.active_plan: Plan | None = None
 
     async def start(self) -> None:
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
