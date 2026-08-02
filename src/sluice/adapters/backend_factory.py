@@ -7,6 +7,7 @@ from collections.abc import Callable
 from sluice.adapters.agy_cli import AgyBackendAdapter
 from sluice.adapters.backend import BackendAdapter
 from sluice.adapters.claude_code import ClaudeCodeBackendAdapter
+from sluice.adapters.codex_cli import CodexBackendAdapter
 from sluice.adapters.cursor_cli import CursorBackendAdapter
 from sluice.config import SluiceSettings
 from sluice.store.sqlite import SQLiteStateStore
@@ -18,6 +19,7 @@ def build_backends(settings: SluiceSettings, store: SQLiteStateStore) -> dict[st
         "claude_code": _build_claude_code,
         "cursor": _build_cursor,
         "agy": _build_agy,
+        "codex": _build_codex,
     }
 
     backends: dict[str, BackendAdapter] = {}
@@ -65,4 +67,17 @@ def _build_agy(settings: SluiceSettings, store: SQLiteStateStore) -> AgyBackendA
         dispatch_timeout_seconds=settings.backend_dispatch_timeout_seconds,
         mode=settings.agy_mode,
         skip_permissions=settings.agy_skip_permissions,
+    )
+
+
+def _build_codex(settings: SluiceSettings, store: SQLiteStateStore) -> CodexBackendAdapter:
+    return CodexBackendAdapter(
+        cli_path=settings.codex_cli_path,
+        max_requests_per_window=settings.codex_max_requests,
+        window_seconds=settings.codex_window_seconds,
+        store=store,
+        dispatch_timeout_seconds=settings.backend_dispatch_timeout_seconds,
+        sandbox=settings.codex_sandbox,
+        ephemeral=settings.codex_ephemeral,
+        skip_git_repo_check=settings.codex_skip_git_repo_check,
     )

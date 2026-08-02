@@ -13,6 +13,7 @@ from sluice.core.jour_fixe import JourFixeManager
 from sluice.core.plan_approval import PlanApprovalManager
 from sluice.core.planner import Planner
 from sluice.core.scheduler import Scheduler
+from sluice.models.plan import Plan
 from sluice.store.sqlite import SQLiteStateStore
 
 log = structlog.get_logger()
@@ -28,7 +29,13 @@ class SluiceApp:
         self.forge = self._build_forge(settings)
         self.backends = build_backends(settings, self.store)
         self.budget_manager = BudgetManager(self.backends)
-        self.planner = Planner()
+        planner_backend = (
+            self.backends.get(settings.planner_backend) if settings.planner_backend else None
+        )
+        self.planner = Planner(
+            backend=planner_backend,
+            worktree_base=settings.data_dir / "planner",
+        )
         self.jour_fixe = JourFixeManager(
             chat=self.chat,
             planner=self.planner,
@@ -46,6 +53,7 @@ class SluiceApp:
             store=self.store,
             auto_approve=settings.plan_auto_approve,
         )
+        self.active_plan: Plan | None = None
 
     async def start(self) -> None:
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -57,7 +65,22 @@ class SluiceApp:
                 await initialize()
         await self.chat.start()
         await self.forge.start()
+        await self._restore_active_plan()
         log.info("sluice_started", version="0.1.0")
+
+    async def _restore_active_plan(self) -> None:
+        plan = await self.store.load_latest_incomplete_approved_plan()
+        if plan is None:
+            return
+
+        self.active_plan = plan
+        slots = await self.scheduler.schedule_ready_tasks(plan)
+        log.info(
+            "active_plan_restored",
+            plan_id=str(plan.id),
+            tasks=len(plan.tasks),
+            queued_slots=len(slots),
+        )
 
     async def stop(self) -> None:
         await self.chat.stop()

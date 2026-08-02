@@ -11,7 +11,7 @@ from sluice.adapters.cursor_cli import CursorBackendAdapter
 from sluice.core.budget import BudgetManager
 from sluice.core.scheduler import Scheduler
 from sluice.models.budget import BudgetSnapshot, BudgetWindow
-from sluice.models.plan import Plan, PlanTask
+from sluice.models.plan import Plan, PlanTask, TaskStatus
 from sluice.models.schedule import DispatchResult
 from sluice.store.sqlite import SQLiteStateStore
 
@@ -154,6 +154,91 @@ async def test_scheduler_failover_on_quota_exceeded(tmp_path) -> None:
     claude.dispatch.assert_awaited_once()
     cursor.dispatch.assert_awaited_once()
     assert plan.tasks[0].backend_id == "cursor"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_failover_on_fallback_detected(tmp_path) -> None:
+    store = SQLiteStateStore(tmp_path / "sluice.db")
+    await store.initialize()
+
+    claude = ClaudeCodeBackendAdapter(
+        store=store,
+        max_requests_per_window=10,
+        dispatch_timeout_seconds=5,
+    )
+    cursor = CursorBackendAdapter(
+        store=store,
+        max_requests_per_window=10,
+        dispatch_timeout_seconds=5,
+    )
+
+    claude.dispatch = AsyncMock()
+    cursor.dispatch = AsyncMock()
+
+    plan = Plan(tasks=[PlanTask(title="Ship", backend_id="claude_code")])
+    task = plan.tasks[0]
+
+    claude.dispatch.return_value = DispatchResult(
+        task_id=task.id,
+        backend_id="claude_code",
+        success=False,
+        fallback_detected=True,
+        error="fallback",
+    )
+    cursor.dispatch.return_value = DispatchResult(
+        task_id=task.id,
+        backend_id="cursor",
+        success=True,
+        output="done",
+    )
+
+    backends = {"claude_code": claude, "cursor": cursor}
+    scheduler = Scheduler(
+        backends=backends,
+        budget_manager=BudgetManager(backends),
+        worktree_base=tmp_path / "worktrees",
+    )
+
+    await scheduler.schedule_plan(plan)
+    result = await scheduler.dispatch_next(plan)
+
+    assert result is not None
+    assert result.success is True
+    claude.dispatch.assert_awaited_once()
+    cursor.dispatch.assert_awaited_once()
+    assert plan.tasks[0].backend_id == "cursor"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_keeps_task_queued_when_all_backends_fallback(tmp_path) -> None:
+    claude = ClaudeCodeBackendAdapter(dispatch_timeout_seconds=5)
+    claude.dispatch = AsyncMock(
+        return_value=DispatchResult(
+            task_id=PlanTask(title="Ship").id,
+            backend_id="claude_code",
+            success=False,
+            fallback_detected=True,
+        )
+    )
+
+    plan = Plan(tasks=[PlanTask(title="Ship", backend_id="claude_code")])
+    task = plan.tasks[0]
+    claude.dispatch.return_value.task_id = task.id
+
+    backends = {"claude_code": claude}
+    scheduler = Scheduler(
+        backends=backends,
+        budget_manager=BudgetManager(backends),
+        worktree_base=tmp_path / "worktrees",
+    )
+
+    await scheduler.schedule_plan(plan)
+    result = await scheduler.dispatch_next(plan)
+
+    assert result is not None
+    assert result.fallback_detected is True
+    assert task.status == TaskStatus.READY
+    assert scheduler.has_pending is True
 
 
 def test_budget_snapshot_headroom_with_observed_limit() -> None:

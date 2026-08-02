@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from sluice.adapters.cli_backend import CLIBackendAdapter, CLIInvocation
 from sluice.models.plan import PlanTask
 from sluice.store.sqlite import SQLiteStateStore
+
+_CLAUDE_FALLBACK_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bhaiku\b",
+        r"fast mode",
+        r"lower.?tier",
+        r"degraded.?model",
+    )
+)
 
 
 class ClaudeCodeBackendAdapter(CLIBackendAdapter):
@@ -43,3 +54,8 @@ class ClaudeCodeBackendAdapter(CLIBackendAdapter):
             cwd=worktree,
             timeout_seconds=self._dispatch_timeout_seconds,
         )
+
+    def _detect_fallback(self, output: str) -> bool:
+        if any(pattern.search(output) for pattern in _CLAUDE_FALLBACK_PATTERNS):
+            return True
+        return super()._detect_fallback(output)
