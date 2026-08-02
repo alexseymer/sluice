@@ -68,9 +68,7 @@ All credentials via `SLUICE_*` env vars — see `.env.example`. Never log or com
 
 ### Pull requests
 
-Every standard PR must be **assigned to `alexseymer`**.
-
-- After creating a PR with `ManagePullRequest`, run:
-  `gh pr edit <pr-url> --add-assignee alexseymer`
-- With `gh pr create`, pass `--assignee alexseymer`
-- See `.cursor/rules/pull-requests.mdc` for full PR conventions
+Use **`ManagePullRequest`** to create and update PRs — not `gh pr create` / `gh pr edit`
+(the cloud installation token lacks PR/issue API scopes). Commit, push, then
+`create_pr` / `update_pr`. Standard PRs should note assignee **`alexseymer`** in the body
+or summary for manual assignment on GitHub. See `.cursor/rules/pull-requests.mdc`.
