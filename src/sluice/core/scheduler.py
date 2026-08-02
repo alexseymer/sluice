@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from uuid import UUID
 
@@ -10,6 +11,7 @@ import structlog
 from sluice.adapters.backend import BackendAdapter
 from sluice.core.budget import BudgetManager
 from sluice.core.graph import DependencyGraph
+from sluice.core.orchestrator import execute_task_with_review
 from sluice.models.plan import Plan, PlanTask, TaskStatus
 from sluice.models.schedule import DispatchResult, ScheduleSlot
 
@@ -25,17 +27,26 @@ class Scheduler:
         budget_manager: BudgetManager,
         worktree_base: Path,
         default_backend: str | None = None,
+        *,
+        reviewer_backend: BackendAdapter | None = None,
+        max_review_iterations: int = 3,
     ) -> None:
         self._backends = backends
         self._budget = budget_manager
         self._worktree_base = worktree_base
         self._default_backend = default_backend
+        self._reviewer = reviewer_backend
+        self._max_review_iterations = max_review_iterations
         self._queue: list[ScheduleSlot] = []
         self._queued_task_ids: set[UUID] = set()
 
     @property
     def has_pending(self) -> bool:
         return bool(self._queue)
+
+    @property
+    def pending_count(self) -> int:
+        return len(self._queue)
 
     async def schedule_plan(self, plan: Plan) -> list[ScheduleSlot]:
         """Enqueue ready tasks that are not already queued."""
@@ -81,13 +92,95 @@ class Scheduler:
             return None
 
         slot = self._queue[0]
+        result = await self._dispatch_slot(plan, slot)
+        if result is not None and not self._should_requeue(result):
+            self._dequeue(slot.task_id)
+        return result
+
+    async def dispatch_ready_parallel(self, plan: Plan) -> list[DispatchResult]:
+        """Dispatch all queued ready tasks concurrently (e.g. independent issues)."""
+        if not self._queue:
+            return []
+
+        slots = list(self._queue)
+        results = await asyncio.gather(
+            *(self._dispatch_slot(plan, slot) for slot in slots),
+            return_exceptions=True,
+        )
+
+        dispatched: list[DispatchResult] = []
+        for slot, result in zip(slots, results, strict=True):
+            if isinstance(result, BaseException):
+                log.exception(
+                    "parallel_dispatch_failed",
+                    task_id=str(slot.task_id),
+                    exc=result,
+                )
+                task = self.find_task(plan, slot.task_id)
+                if task is not None:
+                    task.status = TaskStatus.FAILED
+                self._dequeue(slot.task_id)
+                continue
+            if result is not None:
+                dispatched.append(result)
+                if not self._should_requeue(result):
+                    self._dequeue(slot.task_id)
+        return dispatched
+
+    @staticmethod
+    def _should_requeue(result: DispatchResult) -> bool:
+        return result.quota_exceeded or result.fallback_detected
+
+    async def _dispatch_slot(self, plan: Plan, slot: ScheduleSlot) -> DispatchResult | None:
         task = self.find_task(plan, slot.task_id)
         if task is None:
-            self._dequeue(slot.task_id)
             return None
 
         worktree = self._worktree_base / str(task.id)
         worktree.mkdir(parents=True, exist_ok=True)
+
+        if self._reviewer is not None:
+            worker = await self._resolve_worker_backend(task, slot.backend_id)
+            if worker is None:
+                task.status = TaskStatus.FAILED
+                return DispatchResult(
+                    task_id=task.id,
+                    backend_id=slot.backend_id,
+                    success=False,
+                    error="No worker backend available",
+                )
+            return await execute_task_with_review(
+                worker=worker,
+                reviewer=self._reviewer,
+                task=task,
+                worktree=worktree,
+                max_iterations=self._max_review_iterations,
+            )
+
+        return await self._dispatch_single_backend(plan, task, slot, worktree)
+
+    async def _resolve_worker_backend(
+        self, task: PlanTask, preferred_id: str
+    ) -> BackendAdapter | None:
+        if (
+            task.backend_id
+            and task.backend_id in self._backends
+            and await self._budget.can_dispatch(task.backend_id)
+        ):
+            return self._backends[task.backend_id]
+        if preferred_id in self._backends and await self._budget.can_dispatch(preferred_id):
+            return self._backends[preferred_id]
+        for backend_id in await self._budget.available_backends():
+            return self._backends[backend_id]
+        return None
+
+    async def _dispatch_single_backend(
+        self,
+        plan: Plan,
+        task: PlanTask,
+        slot: ScheduleSlot,
+        worktree: Path,
+    ) -> DispatchResult | None:
         task.status = TaskStatus.IN_PROGRESS
 
         preferred = [slot.backend_id] if slot.backend_id in self._backends else []
@@ -122,7 +215,6 @@ class Scheduler:
                 )
                 continue
 
-            self._dequeue(slot.task_id)
             task.status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
             task.backend_id = backend_id
             return result
@@ -131,7 +223,6 @@ class Scheduler:
             task.status = TaskStatus.READY
             return last_result
 
-        self._dequeue(slot.task_id)
         task.status = TaskStatus.FAILED
         return last_result
 

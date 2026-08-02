@@ -39,9 +39,15 @@ async def run_dispatch_loop(app: SluiceApp) -> None:
         plan = app.active_plan
         if plan is not None:
             if app.scheduler.has_pending:
-                result = await app.scheduler.dispatch_next(plan)
-                if result is not None:
+                if app.scheduler.pending_count > 1:
+                    results = await app.scheduler.dispatch_ready_parallel(plan)
+                else:
+                    single = await app.scheduler.dispatch_next(plan)
+                    results = [single] if single is not None else []
+
+                for result in results:
                     await _notify_dispatch_result(app, plan, result)
+                if results:
                     await app.scheduler.schedule_ready_tasks(plan)
                     await app.store.save_plan(plan)
 
@@ -59,7 +65,7 @@ async def _notify_dispatch_result(
     title = task.title if task is not None else str(result.task_id)
 
     if result.success:
-        message = f"Task completed: {title} ({result.backend_id})"
+        message = f"Issue completed: {title} ({result.backend_id})"
         log.info(
             "task_dispatched",
             task_id=str(result.task_id),
@@ -83,7 +89,7 @@ async def _notify_dispatch_result(
             backend_id=result.backend_id,
         )
     else:
-        message = f"Task failed: {title} ({result.backend_id})"
+        message = f"Issue failed: {title} ({result.backend_id})"
         if result.error:
             message = f"{message} — {result.error}"
         log.warning(

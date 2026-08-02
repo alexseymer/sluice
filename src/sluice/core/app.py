@@ -31,9 +31,30 @@ class SluiceApp:
         self.forge = self._build_forge(settings)
         self.backends = build_backends(settings, self.store)
         self.budget_manager = BudgetManager(self.backends)
-        conversation_backend = self._resolve_conversation_backend(settings, self.backends)
+        conversation_backend = self._resolve_backend(
+            settings,
+            self.backends,
+            preferred=(
+                settings.planner_backend,
+                settings.default_backend,
+            ),
+        )
+        orchestrator_backend = self._resolve_backend(
+            settings,
+            self.backends,
+            preferred=(
+                settings.orchestrator_backend,
+                settings.planner_backend,
+                settings.default_backend,
+            ),
+        )
+        reviewer_backend = self._resolve_backend(
+            settings,
+            self.backends,
+            preferred=(settings.reviewer_backend,),
+        )
         self.planner = Planner(
-            backend=conversation_backend,
+            orchestrator=orchestrator_backend,
             worktree_base=settings.data_dir / "planner",
         )
         self.jour_fixe = JourFixeManager(
@@ -54,6 +75,8 @@ class SluiceApp:
             budget_manager=self.budget_manager,
             worktree_base=settings.worktree_base_dir,
             default_backend=settings.default_backend,
+            reviewer_backend=reviewer_backend,
+            max_review_iterations=settings.max_review_iterations,
         )
         self.plan_approval = PlanApprovalManager(
             forge=self.forge,
@@ -95,16 +118,14 @@ class SluiceApp:
         log.info("sluice_stopped")
 
     @staticmethod
-    def _resolve_conversation_backend(
+    def _resolve_backend(
         settings: SluiceSettings,
         backends: dict[str, BackendAdapter],
+        *,
+        preferred: tuple[str | None, ...],
     ) -> BackendAdapter | None:
-        """Pick planner → default → first configured AI backend for chat + planning."""
-        candidates: list[str] = []
-        if settings.planner_backend:
-            candidates.append(settings.planner_backend)
-        if settings.default_backend:
-            candidates.append(settings.default_backend)
+        """Pick the first configured backend from preferred ids, then ai_backends."""
+        candidates: list[str] = [name for name in preferred if name]
         candidates.extend(
             part.strip() for part in settings.ai_backends.split(",") if part.strip()
         )
@@ -117,6 +138,18 @@ class SluiceApp:
             if backend is not None:
                 return backend
         return None
+
+    @staticmethod
+    def _resolve_conversation_backend(
+        settings: SluiceSettings,
+        backends: dict[str, BackendAdapter],
+    ) -> BackendAdapter | None:
+        """Pick planner → default → first configured AI backend for jour fixe chat."""
+        return SluiceApp._resolve_backend(
+            settings,
+            backends,
+            preferred=(settings.planner_backend, settings.default_backend),
+        )
 
     @staticmethod
     def _build_chat(settings: SluiceSettings) -> MatrixChatAdapter:

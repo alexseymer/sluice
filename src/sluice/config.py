@@ -29,6 +29,11 @@ class SluiceSettings(BaseSettings):
     jour_fixe_scheduler_enabled: bool = Field(default=True)
     plan_auto_approve: bool = Field(default=False)
     planner_backend: str | None = None
+    # Primary CLI agent: shapes jour fixe into GitHub issues and coordinates execution.
+    orchestrator_backend: str | None = None
+    # Second CLI agent: reviews worker output against acceptance criteria per issue.
+    reviewer_backend: str | None = None
+    max_review_iterations: int = Field(default=3)
     # OpenAI-compatible chat API for Matrix jour fixe (recommended in Docker).
     jour_fixe_llm_base_url: str | None = None
     jour_fixe_llm_api_key: str | None = None
