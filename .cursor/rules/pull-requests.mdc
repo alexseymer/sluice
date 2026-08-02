@@ -1,0 +1,17 @@
+---
+description: Pull request conventions for Sluice — assignee, drafting, and agent workflow
+alwaysApply: true
+---
+
+# Pull requests
+
+When creating or updating a pull request in this repository:
+
+1. **Assignee** — Every standard PR must be assigned to **`alexseymer`**.
+   - After `ManagePullRequest` `create_pr`, run:
+     `gh pr edit <pr-url> --add-assignee alexseymer`
+   - When using `gh pr create` directly, pass `--assignee alexseymer`.
+2. **Draft by default** — Open PRs as draft unless the user explicitly asks otherwise.
+3. **Branch naming** — Cloud agent branches use the `cursor/<descriptive-name>-203b` pattern.
+
+If assignee update fails (permissions or username mismatch), note it in the PR summary and ask the user to assign manually.
