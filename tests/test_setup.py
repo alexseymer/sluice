@@ -18,6 +18,7 @@ from sluice.setup.github_oauth import (
 from sluice.setup.matrix_provision import (
     provision_matrix,
     synapse_registration_mac,
+    verify_matrix_bot,
 )
 
 
@@ -245,3 +246,28 @@ async def test_provision_matrix_reuses_existing_bot_via_password() -> None:
     assert result.bot_access_token == "bot_token"
     assert result.room_id == "!xyz:example.com"
     assert any("bot-pass" in entry for entry in logins)
+
+
+@pytest.mark.asyncio
+async def test_verify_matrix_bot_ok() -> None:
+    hs = "https://matrix.example.com"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith("/account/whoami"):
+            return httpx.Response(200, json={"user_id": "@bot:example.com"})
+        if url.endswith("/joined_rooms"):
+            return httpx.Response(200, json={"joined_rooms": ["!abc:example.com"]})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        user_id = await verify_matrix_bot(
+            homeserver=hs,
+            access_token="tok",
+            room_id="!abc:example.com",
+            expected_localpart="bot",
+            client=client,
+        )
+    assert user_id == "@bot:example.com"
+

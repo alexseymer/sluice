@@ -132,6 +132,35 @@ async def whoami(
     return str(response.json().get("user_id") or "") or None
 
 
+async def verify_matrix_bot(
+    *,
+    homeserver: str,
+    access_token: str,
+    room_id: str | None = None,
+    expected_localpart: str | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> str | None:
+    """Return bot user_id if token is valid (and room joined when room_id set)."""
+    hs = normalize_homeserver(homeserver)
+
+    async def _run(http: httpx.AsyncClient) -> str | None:
+        user_id = await whoami(http, homeserver=hs, access_token=access_token)
+        if not user_id:
+            return None
+        if expected_localpart and localpart_from_mxid(user_id) != expected_localpart:
+            return None
+        if room_id and not await room_joined(
+            http, homeserver=hs, bot_token=access_token, room_id=room_id
+        ):
+            return None
+        return user_id
+
+    if client is not None:
+        return await _run(client)
+    async with httpx.AsyncClient(timeout=30.0) as http:
+        return await _run(http)
+
+
 async def register_bot_shared_secret(
     client: httpx.AsyncClient,
     *,
