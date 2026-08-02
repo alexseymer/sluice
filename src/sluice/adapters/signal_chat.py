@@ -34,7 +34,10 @@ class SignalChatAdapter(ChatAdapter):
     async def start_jour_fixe_prompt(self) -> None:
         await self.send(
             OutgoingMessage(
-                text="Good morning — ready for today's jour fixe?",
+                text=(
+                    "Good to meet — let's do a short jour fixe. "
+                    "Where do we stand since last time?"
+                ),
                 recipient=self._recipient,
             )
         )

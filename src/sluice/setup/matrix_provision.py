@@ -427,7 +427,8 @@ async def send_setup_notice(
             "msgtype": "m.notice",
             "body": (
                 "Sluice is connected. Accept the invite if you have not already, "
-                "then run `/jour-fixe` here when you are ready to plan."
+                "then say `/jour-fixe` when you want to meet — we'll talk through "
+                "where things stand and shape a plan together."
             ),
         },
     )

@@ -141,8 +141,10 @@ class MatrixChatAdapter(ChatAdapter):
         await self.send(
             OutgoingMessage(
                 text=(
-                    "Good morning — ready for today's jour fixe?\n"
-                    "Reply with work items, then send `/done` when finished."
+                    "Good to meet — let's do a short jour fixe.\n\n"
+                    "Where do we stand, and what problems or surprises showed up "
+                    "since last time? Once we've talked it through, say you're done "
+                    "and I'll turn our discussion into a concrete plan."
                 )
             )
         )

@@ -12,13 +12,15 @@ Phase 1 is runnable via **Docker Compose** — Matrix chat, GitHub issues, CLI b
 
 AI coding subscriptions have usage windows. Burn through them in a burst and you either get downgraded to a weaker model without much warning, or start paying metered rates. Sluice treats "AI coding capacity" as a schedulable, rate-limited resource — like a build farm schedules CI jobs — so you get consistent throughput without babysitting it.
 
-## How it works (planned)
+## How it works
 
-1. **Jour fixe** — a scheduled chat session where you and Sluice discuss upcoming work.
-2. **Plan** — Sluice breaks the discussion into dependency-ordered tasks.
-3. **Issues** — tasks get filed on your Git forge, with explicit dependency links.
-4. **Scheduling** — Sluice dispatches unblocked tasks to your AI CLI backends throughout the day, respecting each one's budget/rate limits.
+1. **Jour fixe** — a conversational chat (Matrix) that starts from status quo and problems since last time, then discusses how to handle them. Messages are passed through to your configured AI CLI so it feels like talking to the tool directly.
+2. **Plan** — when you say you're done, Sluice summarizes the discussion into a dependency-ordered task plan for your approval.
+3. **Issues** — approved tasks are filed on your Git forge, with explicit dependency links.
+4. **Scheduling** — Sluice dispatches unblocked tasks to specialized AI CLI backends throughout the day, respecting each one's budget/rate limits.
 5. **Check-ins** — async updates over Signal, Telegram, or Matrix; you can query status or interrupt at any time outside the jour fixe.
+
+Set `SLUICE_PLANNER_BACKEND` (e.g. `cursor` or `claude_code`) so jour fixe chat and plan structuring can call an AI CLI. Without it, Sluice still buffers notes but cannot hold a real conversation.
 
 ## Privacy
 

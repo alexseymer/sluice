@@ -100,20 +100,29 @@ class PlanApprovalManager:
     def format_plan(self, plan: Plan) -> str:
         """Render a human-readable plan summary for chat."""
         if not plan.tasks:
-            return "Plan is empty — no tasks were captured."
+            return (
+                "I couldn't pull a concrete task list out of that discussion yet. "
+                "Want to start another jour fixe and dig in a bit more?"
+            )
 
+        lines: list[str] = ["Here's the plan from our jour fixe:"]
+        if plan.summary:
+            lines.extend(["", plan.summary])
+
+        lines.extend(["", f"We'll tackle this in {len(plan.tasks)} step(s):"])
         task_index = {task.id: index for index, task in enumerate(plan.tasks, start=1)}
-        lines = [f"Plan {plan.id} — {len(plan.tasks)} task(s):"]
         for index, task in enumerate(plan.tasks, start=1):
             deps = ""
             if task.depends_on:
                 dep_indexes = [str(task_index[dep_id]) for dep_id in task.depends_on]
-                deps = f" (depends on task {', '.join(dep_indexes)})"
-            lines.append(f"{index}. {task.title}{deps}")
+                deps = f" (after step {', '.join(dep_indexes)})"
+            detail = ""
+            if task.description and task.description != task.title:
+                detail = f" — {task.description}"
+            lines.append(f"{index}. {task.title}{deps}{detail}")
 
         if plan.is_approved:
-            lines.append("")
-            lines.append("Status: approved")
+            lines.extend(["", "Status: approved and filed:"])
             for task in plan.tasks:
                 if task.forge_issue_id:
                     lines.append(f"- #{task.forge_issue_id}: {task.title}")
@@ -121,7 +130,9 @@ class PlanApprovalManager:
             lines.extend(
                 [
                     "",
-                    "Reply `/approve` to create GitHub issues, or `/reject` to discard.",
+                    "If this looks right, reply `/approve` and I'll file the issues "
+                    "and start coordinating the specialist agents. "
+                    "Or `/reject` to discard and we can talk again.",
                 ]
             )
         return "\n".join(lines)
@@ -132,8 +143,10 @@ class PlanApprovalManager:
         ]
         if not issues:
             return "Plan approved, but no issues were created."
-        return "Plan approved. Created issues:\n" + "\n".join(issues)
-
+        return (
+            "Approved — I've filed the issues and will coordinate the work from here:\n"
+            + "\n".join(issues)
+        )
     def _require_pending_plan(self) -> Plan:
         if not self.has_pending_plan or self._pending_plan is None:
             raise PlanApprovalError("No plan is awaiting approval.")

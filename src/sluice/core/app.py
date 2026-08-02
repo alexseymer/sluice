@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import structlog
 
+from sluice.adapters.backend import BackendAdapter
 from sluice.adapters.backend_factory import build_backends
 from sluice.adapters.github_forge import GitHubForgeAdapter
 from sluice.adapters.matrix_chat import MatrixChatAdapter
@@ -29,11 +30,9 @@ class SluiceApp:
         self.forge = self._build_forge(settings)
         self.backends = build_backends(settings, self.store)
         self.budget_manager = BudgetManager(self.backends)
-        planner_backend = (
-            self.backends.get(settings.planner_backend) if settings.planner_backend else None
-        )
+        conversation_backend = self._resolve_conversation_backend(settings, self.backends)
         self.planner = Planner(
-            backend=planner_backend,
+            backend=conversation_backend,
             worktree_base=settings.data_dir / "planner",
         )
         self.jour_fixe = JourFixeManager(
@@ -41,6 +40,8 @@ class SluiceApp:
             planner=self.planner,
             cron_expression=settings.jour_fixe_cron,
             timeout_minutes=settings.jour_fixe_timeout_minutes,
+            conversation_backend=conversation_backend,
+            worktree_base=settings.data_dir / "planner",
         )
         self.scheduler = Scheduler(
             backends=self.backends,
@@ -86,6 +87,30 @@ class SluiceApp:
         await self.chat.stop()
         await self.forge.close()
         log.info("sluice_stopped")
+
+    @staticmethod
+    def _resolve_conversation_backend(
+        settings: SluiceSettings,
+        backends: dict[str, BackendAdapter],
+    ) -> BackendAdapter | None:
+        """Pick planner → default → first configured AI backend for chat + planning."""
+        candidates: list[str] = []
+        if settings.planner_backend:
+            candidates.append(settings.planner_backend)
+        if settings.default_backend:
+            candidates.append(settings.default_backend)
+        candidates.extend(
+            part.strip() for part in settings.ai_backends.split(",") if part.strip()
+        )
+        seen: set[str] = set()
+        for name in candidates:
+            if name in seen:
+                continue
+            seen.add(name)
+            backend = backends.get(name)
+            if backend is not None:
+                return backend
+        return None
 
     @staticmethod
     def _build_chat(settings: SluiceSettings) -> MatrixChatAdapter:
