@@ -13,6 +13,7 @@ from sluice.setup.github_oauth import (
     GitHubAuthError,
     authorize_github,
     parse_github_repo,
+    verify_github_token,
 )
 from sluice.setup.matrix_provision import (
     provision_matrix,
@@ -70,6 +71,45 @@ def test_synapse_registration_mac_stable() -> None:
         password="pw",
         admin=False,
     )
+
+
+@pytest.mark.asyncio
+async def test_verify_github_token_reuses_valid_token() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith("/user"):
+            return httpx.Response(200, json={"login": "alexseymer"})
+        if "/repos/alexseymer/sluice" in url:
+            return httpx.Response(200, json={"full_name": "alexseymer/sluice"})
+        return httpx.Response(404, json={"message": "not found"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await verify_github_token(
+            token="gho_existing",
+            owner="alexseymer",
+            repo="sluice",
+            client=client,
+        )
+    assert result is not None
+    assert result.login == "alexseymer"
+    assert result.token == "gho_existing"
+
+
+@pytest.mark.asyncio
+async def test_verify_github_token_rejects_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"message": "Bad credentials"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await verify_github_token(
+            token="gho_bad",
+            owner="alexseymer",
+            repo="sluice",
+            client=client,
+        )
+    assert result is None
 
 
 @pytest.mark.asyncio

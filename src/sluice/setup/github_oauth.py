@@ -164,6 +164,45 @@ async def fetch_login(client: httpx.AsyncClient, token: str) -> str:
     return str(response.json()["login"])
 
 
+async def verify_github_token(
+    *,
+    token: str,
+    owner: str,
+    repo: str,
+    client: httpx.AsyncClient | None = None,
+) -> GitHubAuthResult | None:
+    """Return auth result if `token` can access the repo; otherwise None."""
+    if not token.strip():
+        return None
+
+    async def _run(http: httpx.AsyncClient) -> GitHubAuthResult | None:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        user_response = await http.get("https://api.github.com/user", headers=headers)
+        if user_response.status_code >= 400:
+            return None
+        repo_response = await http.get(
+            f"https://api.github.com/repos/{owner}/{repo}",
+            headers=headers,
+        )
+        if repo_response.status_code >= 400:
+            return None
+        return GitHubAuthResult(
+            token=token,
+            owner=owner,
+            repo=repo,
+            login=str(user_response.json()["login"]),
+        )
+
+    if client is not None:
+        return await _run(client)
+    async with httpx.AsyncClient(timeout=30.0) as http:
+        return await _run(http)
+
+
 async def authorize_github(
     *,
     client_id: str,

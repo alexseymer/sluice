@@ -7,7 +7,7 @@ import asyncio
 import getpass
 from pathlib import Path
 
-from sluice.config import load_settings
+from sluice.config import SluiceSettings, load_settings
 from sluice.setup.envfile import upsert_env_file
 from sluice.setup.github_oauth import (
     DeviceCode,
@@ -15,17 +15,21 @@ from sluice.setup.github_oauth import (
     authorize_github,
     detect_github_repo_from_git,
     parse_github_repo,
+    verify_github_token,
 )
-from sluice.setup.matrix_provision import MatrixSetupError, provision_matrix
+from sluice.setup.matrix_provision import MatrixSetupError, localpart_from_mxid, provision_matrix
 
 
 def _prompt(label: str, *, default: str | None = None) -> str:
-    suffix = f" [{default}]" if default else ""
+    shown = default.strip() if isinstance(default, str) else default
+    if not shown:
+        shown = None
+    suffix = f" [{shown}]" if shown else ""
     value = input(f"{label}{suffix}: ").strip()
     if value:
         return value
-    if default is not None:
-        return default
+    if shown is not None:
+        return shown
     return ""
 
 
@@ -42,16 +46,56 @@ def _print_device_code(device: DeviceCode) -> None:
     print()
 
 
-async def _setup_github(*, env_path: Path, client_id: str | None) -> dict[str, str]:
+def _bot_localpart_default(user_id: str | None) -> str:
+    if not user_id:
+        return "sluice-bot"
+    try:
+        return localpart_from_mxid(user_id)
+    except MatrixSetupError:
+        return "sluice-bot"
+
+
+async def _setup_github(
+    *,
+    env_path: Path,
+    settings: SluiceSettings,
+    client_id: str | None,
+    force_auth: bool = False,
+) -> dict[str, str]:
     print("\n=== GitHub ===")
+    existing_owner = settings.github_owner
+    existing_repo = settings.github_repo
+    existing_token = settings.github_token
     detected = detect_github_repo_from_git()
-    repo_value = _prompt("Repository (owner/repo)", default=detected)
+    default_repo = (
+        f"{existing_owner}/{existing_repo}"
+        if existing_owner and existing_repo
+        else detected
+    )
+    repo_value = _prompt("Repository (owner/repo)", default=default_repo)
     owner, repo = parse_github_repo(repo_value)
 
-    oauth_client_id = client_id or _prompt(
+    if not force_auth and existing_token:
+        reused = await verify_github_token(token=existing_token, owner=owner, repo=repo)
+        if reused is not None:
+            print(f"GitHub already authorized as {reused.login} → {owner}/{repo}")
+            values = {
+                "SLUICE_FORGE_BACKEND": "github",
+                "SLUICE_GITHUB_OWNER": owner,
+                "SLUICE_GITHUB_REPO": repo,
+                "SLUICE_GITHUB_TOKEN": existing_token,
+            }
+            if client_id:
+                values["SLUICE_GITHUB_OAUTH_CLIENT_ID"] = client_id
+            upsert_env_file(env_path, values)
+            return values
+        print("Existing GitHub token is missing or invalid — starting device login.")
+
+    oauth_client_id = _prompt(
         "GitHub OAuth App client ID\n"
         "  (create an OAuth App at https://github.com/settings/developers,\n"
-        "   enable Device Flow, callback can be http://127.0.0.1)"
+        "   enable Device Flow, callback can be http://127.0.0.1)",
+        default=client_id,
     )
     if not oauth_client_id:
         raise GitHubAuthError("OAuth App client ID is required for device-flow setup")
@@ -74,13 +118,19 @@ async def _setup_github(*, env_path: Path, client_id: str | None) -> dict[str, s
     return values
 
 
-async def _setup_matrix(*, env_path: Path) -> dict[str, str]:
+async def _setup_matrix(*, env_path: Path, settings: SluiceSettings) -> dict[str, str]:
     print("\n=== Matrix ===")
     print(
         "Setup will log in as you, create a @sluice-bot user, and open a private room."
     )
-    homeserver = _prompt("Homeserver URL", default="https://matrix.example.com")
-    operator = _prompt("Your Matrix user (mxid or localpart)")
+    homeserver = _prompt(
+        "Homeserver URL",
+        default=settings.matrix_homeserver or "https://matrix.example.com",
+    )
+    operator = _prompt(
+        "Your Matrix user (mxid or localpart)",
+        default=settings.matrix_allowed_sender,
+    )
     password = _prompt_secret("Your Matrix password")
     if not operator or not password:
         raise MatrixSetupError("Operator user and password are required")
@@ -97,7 +147,10 @@ async def _setup_matrix(*, env_path: Path) -> dict[str, str]:
             "Registration token (optional, if your server requires one)",
             default="",
         )
-    bot_localpart = _prompt("Bot localpart", default="sluice-bot")
+    bot_localpart = _prompt(
+        "Bot localpart",
+        default=_bot_localpart_default(settings.matrix_user_id),
+    )
 
     result = await provision_matrix(
         homeserver=homeserver,
@@ -131,9 +184,14 @@ async def run_setup_async(args: argparse.Namespace) -> int:
 
     try:
         if do_github:
-            await _setup_github(env_path=env_path, client_id=client_id)
+            await _setup_github(
+                env_path=env_path,
+                settings=settings,
+                client_id=client_id,
+                force_auth=args.force_github_auth,
+            )
         if do_matrix:
-            await _setup_matrix(env_path=env_path)
+            await _setup_matrix(env_path=env_path, settings=settings)
     except (GitHubAuthError, MatrixSetupError) as exc:
         print(f"\nSetup failed: {exc}")
         return 1
@@ -173,5 +231,10 @@ def add_setup_parser(subparsers: argparse._SubParsersAction) -> None:
         "--github-client-id",
         default=None,
         help="GitHub OAuth App client ID (Device Flow enabled)",
+    )
+    parser.add_argument(
+        "--force-github-auth",
+        action="store_true",
+        help="Re-run GitHub device login even if an existing token still works",
     )
     parser.set_defaults(handler=run_setup)
