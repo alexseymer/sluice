@@ -9,14 +9,14 @@ Jour fixe → plan → GitHub issues → dispatch to one AI CLI backend → basi
 - [ ] Planner: conversation → dependency-ordered task list
 - [x] GitHub adapter: create/update/link issues
 - [x] Plan approval flow in chat → file issues on approve
-- [ ] One AI CLI backend adapter (candidate: Claude Code, given documented CLI/output format)
-- [ ] Basic time-window budget tracking for that backend
+- [x] One AI CLI backend adapter (Claude Code, Cursor CLI, and agy)
+- [x] Basic time-window budget tracking for that backend
 - [x] One chat backend (Matrix — Signal stub remains)
 - [x] Docker Compose bring-up
 
 ## Phase 2 — Multi-backend
-- [ ] Cursor adapter
-- [ ] Agy adapter
+- [x] Cursor adapter
+- [x] Agy adapter
 - [ ] Codex adapter
 - [ ] Fallback-model detection (per backend, since this likely differs)
 - [ ] Scheduling refinements once real budget data exists across backends

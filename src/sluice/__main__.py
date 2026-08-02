@@ -23,7 +23,7 @@ async def _run() -> int:
         "sluice_ready",
         chat=settings.chat_backend,
         forge=settings.forge_backend,
-        ai_backend=settings.ai_backend,
+        ai_backends=sorted(app.backends.keys()),
         chat_running=app.chat.is_running,
         next_jour_fixe=str(app.jour_fixe.next_scheduled_at()),
     )

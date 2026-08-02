@@ -1,4 +1,4 @@
-"""Claude Code CLI backend adapter."""
+"""Antigravity CLI (agy) backend adapter."""
 
 from __future__ import annotations
 
@@ -9,22 +9,23 @@ from sluice.models.plan import PlanTask
 from sluice.store.sqlite import SQLiteStateStore
 
 
-class ClaudeCodeBackendAdapter(CLIBackendAdapter):
-    """Dispatches tasks to the Claude Code CLI in print mode."""
+class AgyBackendAdapter(CLIBackendAdapter):
+    """Dispatches tasks to Google's Antigravity CLI (`agy`) in print mode."""
 
     def __init__(
         self,
         *,
-        cli_path: str = "claude",
-        max_requests_per_window: int = 50,
-        window_seconds: int = 5 * 60 * 60,
+        cli_path: str = "agy",
+        max_requests_per_window: int = 20,
+        window_seconds: int = 24 * 60 * 60,
         safety_margin: float = 0.85,
         store: SQLiteStateStore | None = None,
         dispatch_timeout_seconds: int = 3600,
+        mode: str = "accept-edits",
         skip_permissions: bool = True,
     ) -> None:
         super().__init__(
-            adapter_id="claude_code",
+            adapter_id="agy",
             cli_path=cli_path,
             max_requests_per_window=max_requests_per_window,
             window_seconds=window_seconds,
@@ -32,13 +33,19 @@ class ClaudeCodeBackendAdapter(CLIBackendAdapter):
             store=store,
             dispatch_timeout_seconds=dispatch_timeout_seconds,
         )
+        self._mode = mode
         self._skip_permissions = skip_permissions
 
     def build_invocation(self, task: PlanTask, worktree: Path) -> CLIInvocation:
         prompt = self.build_task_prompt(task)
-        command = ["-p", prompt]
+        command = [
+            "-p",
+            "--mode",
+            self._mode,
+        ]
         if self._skip_permissions:
-            command.insert(0, "--dangerously-skip-permissions")
+            command.append("--dangerously-skip-permissions")
+        command.append(prompt)
 
         return CLIInvocation(
             command=command,

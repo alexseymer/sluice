@@ -5,8 +5,8 @@
 ### Current repository state
 
 Sluice is in **Phase 1** — a runnable Python package with core interfaces and Docker
-Compose bring-up. The Matrix chat adapter is implemented; GitHub and Claude Code adapters
-remain stubs.
+Compose bring-up. The Matrix chat adapter and GitHub forge adapter are implemented;
+plan approval in chat files issues on `/approve`. Claude Code adapter remains a stub.
 
 ### Project layout
 
@@ -54,9 +54,13 @@ docker compose up --build
 1. ~~Matrix chat adapter~~ (done)
 2. ~~GitHub forge adapter~~ (done)
 3. ~~Plan approval in chat~~ (done)
-4. Claude Code backend adapter
+4. ~~AI CLI backends (Claude Code, Cursor, agy)~~ (done)
 5. Jour fixe scheduler integration (cron-triggered sessions)
-6. Budget tracking wired to SQLite store
+6. ~~Budget tracking wired to SQLite store~~ (done)
+
+AI CLI backends: Claude Code (`claude`), Cursor (`agent`), and Antigravity (`agy`).
+Enable via `SLUICE_AI_BACKENDS=claude_code,cursor,agy`. Tasks can set `backend_id`
+or Sluice picks the first backend with budget headroom.
 
 ### Secrets
 

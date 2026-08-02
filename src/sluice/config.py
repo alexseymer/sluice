@@ -45,12 +45,35 @@ class SluiceSettings(BaseSettings):
     github_repo: str | None = None
     github_token: str | None = None
 
-    # AI backend (Phase 1: claude_code)
-    ai_backend: str = Field(default="claude_code")
+    # AI backends — comma-separated list: claude_code,cursor,agy
+    ai_backends: str = Field(default="claude_code,cursor,agy")
+    default_backend: str | None = None
+    budget_safety_margin: float = Field(default=0.85)
+    backend_dispatch_timeout_seconds: int = Field(default=3600)
+
+    # Claude Code
     claude_code_cli_path: str = Field(default="claude")
     claude_code_max_requests: int = Field(default=50)
     claude_code_window_seconds: int = Field(default=5 * 60 * 60)
-    budget_safety_margin: float = Field(default=0.85)
+    claude_code_skip_permissions: bool = Field(default=True)
+
+    # Cursor Agent CLI
+    cursor_cli_path: str = Field(default="agent")
+    cursor_max_requests: int = Field(default=200)
+    cursor_window_seconds: int = Field(default=30 * 24 * 60 * 60)
+    cursor_output_format: str = Field(default="text")
+    cursor_force: bool = Field(default=True)
+    cursor_trust_workspace: bool = Field(default=True)
+
+    # Antigravity CLI (agy)
+    agy_cli_path: str = Field(default="agy")
+    agy_max_requests: int = Field(default=20)
+    agy_window_seconds: int = Field(default=24 * 60 * 60)
+    agy_mode: str = Field(default="accept-edits")
+    agy_skip_permissions: bool = Field(default=True)
+
+    # Deprecated: use ai_backends instead
+    ai_backend: str = Field(default="claude_code")
 
     # Worktrees
     worktree_base_dir: Path = Field(default=Path(".sluice-data/worktrees"))
@@ -61,6 +84,12 @@ class SluiceSettings(BaseSettings):
             # sqlite+aiosqlite:////data/sluice.db -> /data/sluice.db
             return Path(self.database_url.rsplit("/", maxsplit=1)[-1])
         return self.data_dir / "sluice.db"
+
+    def enabled_backend_ids(self) -> list[str]:
+        raw = self.ai_backends.strip()
+        if not raw:
+            return [self.ai_backend]
+        return [backend.strip() for backend in raw.split(",") if backend.strip()]
 
 
 def load_settings() -> SluiceSettings:
