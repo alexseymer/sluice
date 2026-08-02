@@ -16,12 +16,14 @@ Jour fixe → plan → GitHub issues → dispatch to AI CLI backends → budget 
 
 - [x] Jour fixe scheduler (cron-triggered sessions + timeout handling)
 - [x] Conversational jour fixe chat (AI CLI pass-through or OpenAI-compatible LLM API)
-- [x] Planner: conversation → dependency-ordered task list (LLM + heuristic fallback)
+- [x] Planner: conversation → dependency-ordered issue list (orchestrator shapes issues + heuristic fallback)
+- [x] Orchestrator agent shapes jour fixe into best-practice GitHub issues (grouping, acceptance criteria)
 - [x] GitHub adapter: create/update/link issues
 - [x] Plan approval flow in chat → file issues on `/approve`
 - [x] AI CLI backend adapters (Claude Code, Cursor, Agy, Codex)
 - [x] Basic time-window budget tracking with SQLite persistence
-- [x] Background dispatch loop (dependency-aware scheduling + completion notifications)
+- [x] Background dispatch loop (dependency-aware scheduling + parallel ready issues)
+- [x] Worker + reviewer loop per issue (`SLUICE_REVIEWER_BACKEND`) until acceptance criteria pass
 - [x] Forge sync (poll GitHub for closed issues → mark tasks complete)
 - [x] Matrix chat backend (Signal remains a stub)
 - [x] Interactive `sluice setup` wizard (GitHub device flow, Matrix provisioning)
