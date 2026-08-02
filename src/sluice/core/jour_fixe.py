@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from croniter import croniter
 
-from sluice.adapters.chat import ChatAdapter, IncomingMessage, OutgoingMessage
+from sluice.adapters.chat import ChatAdapter, IncomingMessage
 from sluice.core.planner import Planner
 from sluice.models.plan import Plan
 
@@ -70,7 +70,4 @@ class JourFixeManager:
         )
         self._session.plan = plan
         self._session.ended_at = datetime.now(UTC)
-        await self._chat.send(
-            OutgoingMessage(text=f"Plan ready with {len(plan.tasks)} task(s). Awaiting approval.")
-        )
         return plan

@@ -7,7 +7,8 @@ Jour fixe → plan → GitHub issues → dispatch to one AI CLI backend → basi
 
 - [ ] Jour fixe scheduler + chat session flow
 - [ ] Planner: conversation → dependency-ordered task list
-- [ ] GitHub adapter: create/update/link issues
+- [x] GitHub adapter: create/update/link issues
+- [x] Plan approval flow in chat → file issues on approve
 - [ ] One AI CLI backend adapter (candidate: Claude Code, given documented CLI/output format)
 - [ ] Basic time-window budget tracking for that backend
 - [x] One chat backend (Matrix — Signal stub remains)
