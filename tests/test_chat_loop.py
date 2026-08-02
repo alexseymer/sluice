@@ -57,6 +57,13 @@ async def test_start_jour_fixe(app: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
+async def test_start_jour_fixe_alias_without_hyphen(app: MagicMock) -> None:
+    await handle_message(app, IncomingMessage(text="/jourfixe", sender="@you:example.com"))
+    app.jour_fixe.start_session.assert_awaited_once()
+    app.chat.send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_done_without_session(app: MagicMock) -> None:
     await handle_message(app, IncomingMessage(text="/done", sender="@you:example.com"))
     app.jour_fixe.close_session.assert_not_awaited()

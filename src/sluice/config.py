@@ -39,7 +39,9 @@ class SluiceSettings(BaseSettings):
     matrix_access_token: str | None = None
     matrix_user_id: str | None = None
     matrix_allowed_sender: str | None = None
-    matrix_sync_timeout_ms: int = Field(default=30_000)
+    # Keep under typical reverse-proxy idle limits (~10s). Long-poll 504s show up
+    # in nio as missing next_batch and break message receive.
+    matrix_sync_timeout_ms: int = Field(default=8_000)
     # Optional bot password saved by `sluice setup` for re-login if the user already exists.
     matrix_bot_password: str | None = None
     # Optional operator password saved by setup so re-runs can skip the password prompt.

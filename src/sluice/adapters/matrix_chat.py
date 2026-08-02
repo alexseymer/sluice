@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from nio import AsyncClient, AsyncClientConfig, MatrixRoom, RoomMessageText
+from nio import AsyncClient, AsyncClientConfig, MatrixRoom, RoomMessageText, SyncError
 
 from sluice.adapters.chat import ChatAdapter, IncomingMessage, OutgoingMessage
 
@@ -42,6 +42,7 @@ class MatrixChatAdapter(ChatAdapter):
         self._sync_task: asyncio.Task[None] | None = None
         self._queue: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._running = False
+        self._logged_sync_error = False
 
     @property
     def adapter_id(self) -> str:
@@ -69,7 +70,10 @@ class MatrixChatAdapter(ChatAdapter):
         self._user_id = user_id
 
         config = AsyncClientConfig(store_sync_tokens=True)
-        store = str(self._store_path) if self._store_path else ""
+        store = ""
+        if self._store_path is not None:
+            self._store_path.mkdir(parents=True, exist_ok=True)
+            store = str(self._store_path)
         self._client = AsyncClient(
             self._homeserver,
             user_id,
@@ -78,6 +82,7 @@ class MatrixChatAdapter(ChatAdapter):
         )
         self._client.access_token = self._access_token
         self._client.add_event_callback(self._on_room_message, RoomMessageText)
+        self._client.add_response_callback(self._on_sync_response)
 
         await self._ensure_joined_room()
         self._sync_task = asyncio.create_task(
@@ -86,7 +91,11 @@ class MatrixChatAdapter(ChatAdapter):
         )
         self._running = True
         log.info(
-            "matrix_started", homeserver=self._homeserver, room_id=self._room_id, user_id=user_id
+            "matrix_started",
+            homeserver=self._homeserver,
+            room_id=self._room_id,
+            user_id=user_id,
+            sync_timeout_ms=self._sync_timeout_ms,
         )
 
     async def stop(self) -> None:
@@ -154,6 +163,25 @@ class MatrixChatAdapter(ChatAdapter):
             return
 
         log.warning("matrix_join_room_failed", room_id=self._room_id, response=str(response))
+
+    async def _on_sync_response(self, response: object) -> None:
+        if not isinstance(response, SyncError):
+            self._logged_sync_error = False
+            return
+        if self._logged_sync_error:
+            return
+        self._logged_sync_error = True
+        log.warning(
+            "matrix_sync_error",
+            message=getattr(response, "message", None),
+            status_code=getattr(response, "status_code", None),
+            sync_timeout_ms=self._sync_timeout_ms,
+            hint=(
+                "Homeserver/proxy may be cutting long-poll sync (often ~10s). "
+                "Lower SLUICE_MATRIX_SYNC_TIMEOUT_MS (e.g. 8000) or raise the "
+                "proxy idle timeout for /_matrix/client/*/sync."
+            ),
+        )
 
     async def _on_room_message(self, room: MatrixRoom, event: RoomMessageText) -> None:
         if room.room_id != self._room_id:
