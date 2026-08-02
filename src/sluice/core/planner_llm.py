@@ -15,8 +15,14 @@ from sluice.models.plan import Plan, PlanTask
 
 log = structlog.get_logger()
 
-_PLANNER_PROMPT = """You facilitated this jour fixe as Sluice. Extract the agreed
-implementation plan from the full transcript (Human and Assistant turns).
+_ORCHESTRATOR_SHAPE_PROMPT = """You are Sluice's orchestrator — the primary AI agent that turns a
+jour fixe meeting into a GitHub-issue-backed execution plan.
+
+Issues are the backbone of the plan. Shape them for best practice before any work starts:
+- Group related changes into one issue when they ship together.
+- Split only when work is genuinely independent or must land separately.
+- Each issue should be completable by a specialist CLI agent in one focused session.
+- Write clear acceptance criteria so a separate reviewer agent can verify completion.
 
 Transcript:
 {conversation}
@@ -26,18 +32,19 @@ Respond with ONLY valid JSON in this shape:
   "summary": "2-4 sentence human overview of goals and approach",
   "tasks": [
     {{
-      "title": "short task title",
-      "description": "optional longer description for the specialist agent",
-      "depends_on": ["exact title of blocker task"]
+      "title": "concise issue title",
+      "description": "context and scope for the worker agent",
+      "acceptance_criteria": "bullet list of testable done conditions",
+      "depends_on": ["exact title of blocker issue"]
     }}
   ]
 }}
 
 Rules:
 - Prefer what was agreed in discussion over abandoned ideas.
-- Each task should be issue-sized (completable in one AI coding session).
-- Use depends_on only when one task must finish before another starts.
+- Use depends_on only when one issue must finish before another starts.
 - Omit depends_on or use an empty list when there are no blockers.
+- Parallelizable issues should share the same blockers, not depend on each other.
 - Ignore slash-command noise and meta talk about Sluice itself.
 """
 
@@ -51,18 +58,18 @@ async def generate_plan_with_llm(
     task_descriptions: list[str],
     worktree: Path,
 ) -> Plan | None:
-    """Ask an AI backend to structure the jour fixe discussion."""
+    """Ask the orchestrator backend to shape jour fixe output into issues."""
     if not task_descriptions:
         return Plan(jour_fixe_session_id=_session_uuid(session_id))
 
     conversation = "\n".join(task_descriptions)
-    prompt = _PLANNER_PROMPT.format(conversation=conversation)
-    planning_task = PlanTask(title="jour-fixe-planning", description=prompt)
+    prompt = _ORCHESTRATOR_SHAPE_PROMPT.format(conversation=conversation)
+    planning_task = PlanTask(title="jour-fixe-orchestration", description=prompt)
 
     result = await backend.dispatch(planning_task, worktree=worktree)
     if not result.success or not result.output.strip():
         log.warning(
-            "llm_planner_dispatch_failed",
+            "orchestrator_shape_failed",
             backend_id=result.backend_id,
             error=result.error,
         )
@@ -70,7 +77,7 @@ async def generate_plan_with_llm(
 
     plan = _parse_plan_output(result.output, session_id=session_id)
     if plan is None:
-        log.warning("llm_planner_parse_failed", backend_id=result.backend_id)
+        log.warning("orchestrator_shape_parse_failed", backend_id=result.backend_id)
     return plan
 
 
@@ -98,7 +105,8 @@ def _parse_plan_output(output: str, *, session_id: str) -> Plan | None:
         if not title:
             continue
         description = str(item.get("description", title)).strip() or title
-        task = PlanTask(title=title, description=description)
+        acceptance = str(item.get("acceptance_criteria", "")).strip()
+        task = PlanTask(title=title, description=description, acceptance_criteria=acceptance)
         tasks.append(task)
         tasks_by_title[title.lower()] = task
 

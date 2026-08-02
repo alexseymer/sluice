@@ -48,7 +48,11 @@ class DependencyGraph:
         completed = {t.id for t in self._plan.tasks if t.status == TaskStatus.COMPLETED}
         ready: list[PlanTask] = []
         for task in self._plan.tasks:
-            if task.status not in (TaskStatus.PENDING, TaskStatus.READY):
+            if task.status not in (
+                TaskStatus.PENDING,
+                TaskStatus.READY,
+                TaskStatus.NEEDS_REVISION,
+            ):
                 continue
             if all(dep_id in completed for dep_id in task.depends_on):
                 ready.append(task)

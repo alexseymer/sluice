@@ -18,7 +18,7 @@ You talk to Sluice once a day (or on whatever cadence you set) in a short **jour
 |-----------|--------|
 | Matrix chat + jour fixe commands | ✅ |
 | Conversational jour fixe (CLI or LLM API) | ✅ |
-| Planner → dependency-ordered tasks | ✅ |
+| Orchestrator issue shaping + worker/reviewer loop | ✅ |
 | GitHub issues + dependency links | ✅ |
 | AI backends (Claude Code, Cursor, Agy, Codex) | ✅ |
 | Budget probing + fallback failover | ✅ |
@@ -33,13 +33,62 @@ AI coding subscriptions have usage windows. Burn through them in a burst and you
 
 ## How it works
 
-1. **Jour fixe** — a conversational Matrix chat that starts from status quo and problems since last time, then discusses how to handle them. Messages go through your configured AI CLI (on the host) or an OpenAI-compatible LLM API (recommended in Docker).
-2. **Plan** — when you say you're done, Sluice summarizes the discussion into a dependency-ordered task plan for your approval.
-3. **Issues** — approved tasks are filed on GitHub, with explicit dependency links.
-4. **Scheduling** — Sluice dispatches unblocked tasks to AI CLI backends throughout the day, respecting each one's budget/rate limits and failing over when quota or fallback-model degradation is detected.
-5. **Check-ins** — async dispatch notifications over Matrix; `/status`, `/plan`, and `/help` work outside jour fixe.
+Sluice is **issue-driven**: GitHub issues are the backbone of the plan. A daily jour fixe chat becomes shaped issues, you approve before anything runs, then worker and reviewer CLI agents execute each issue in dependency order.
 
-Set `SLUICE_JOUR_FIXE_LLM_*` (OpenAI-compatible chat API) for Matrix conversation when running in Docker — Linux containers cannot execute Windows Cursor/Claude CLIs. Optionally set `SLUICE_PLANNER_BACKEND` for CLI-based planning/dispatch on hosts where those tools exist.
+![Sluice issue-driven workflow (Phase 1)](docs/assets/sluice-workflow-phase1.png)
+
+**Daily chat → AI shapes issues → You approve → Worker/Reviewer loop → Issue done**
+
+### 1. Jour fixe chat
+
+You meet Sluice in Matrix on a schedule (or on demand with `/jour-fixe`). A **facilitator** — your configured AI CLI on the host, or an OpenAI-compatible LLM API in Docker — helps you talk through status quo, problems, and how to handle them. This is planning conversation, not execution.
+
+### 2. AI shapes issues
+
+When you say you're done, the **orchestrator** (primary CLI agent) reads the full transcript and shapes it into GitHub-ready issues:
+
+- Groups related work into one issue when it ships together (not one micro-issue per bullet)
+- Splits only when work is genuinely independent
+- Writes **acceptance criteria** so a reviewer can verify completion
+- Sets **dependency links** — what must finish before what, and what can run in parallel
+
+Sluice posts the shaped plan in Matrix for your review (`/plan` to see it again).
+
+### 3. `/approve` checkpoint
+
+Nothing is filed or executed until you reply **`/approve`**. Use **`/reject`** to discard and start over. This gate keeps the orchestrator's shaped issues under human control before any specialist agents run.
+
+### 4. Issue execution loop
+
+On approval, issues are filed on GitHub. For each **ready** issue (all blockers completed):
+
+1. **Worker** CLI agent implements the issue in an isolated worktree
+2. **Reviewer** CLI agent checks the output against acceptance criteria
+3. If review fails, the worker revises — loop until approved or `SLUICE_MAX_REVIEW_ITERATIONS`
+
+**Sequential:** issue 2 stays blocked until issue 1 is complete and passes review.
+
+**Parallel:** independent issues (e.g. 3 and 4 with the same blockers but not depending on each other) dispatch concurrently.
+
+Sluice paces dispatches across backends to stay within subscription budgets and fails over when quota or fallback-model degradation is detected.
+
+### 5. Issue completed
+
+When an issue passes review, Sluice marks it complete and closes the GitHub issue. You get a notification in Matrix. Forge sync also picks up issues closed manually on GitHub.
+
+Outside jour fixe, use `/status`, `/plan`, and `/help` in Matrix.
+
+### Configuration
+
+| Variable | Role |
+|----------|------|
+| `SLUICE_JOUR_FIXE_LLM_*` | Facilitator chat in Docker (no host CLI required) |
+| `SLUICE_ORCHESTRATOR_BACKEND` | Primary agent that shapes issues (defaults to `SLUICE_PLANNER_BACKEND`) |
+| `SLUICE_REVIEWER_BACKEND` | Second agent for per-issue review loops |
+| `SLUICE_MAX_REVIEW_ITERATIONS` | Max worker/reviewer cycles per issue (default `3`) |
+| `SLUICE_AI_BACKENDS` | Worker pool for implementation |
+
+Without `SLUICE_REVIEWER_BACKEND`, Sluice falls back to single-agent dispatch per issue.
 
 ## Privacy
 

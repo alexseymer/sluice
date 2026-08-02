@@ -14,15 +14,15 @@ log = structlog.get_logger()
 
 
 class Planner:
-    """Generates dependency-ordered task lists from jour fixe discussion."""
+    """Generates dependency-ordered issue lists from jour fixe discussion."""
 
     def __init__(
         self,
         *,
-        backend: BackendAdapter | None = None,
+        orchestrator: BackendAdapter | None = None,
         worktree_base: Path | None = None,
     ) -> None:
-        self._backend = backend
+        self._orchestrator = orchestrator
         self._worktree_base = worktree_base or Path(".sluice-data/planner")
 
     async def generate_plan(
@@ -31,20 +31,20 @@ class Planner:
         session_id: str,
         task_descriptions: list[str],
     ) -> Plan:
-        if self._backend is not None:
+        if self._orchestrator is not None:
             self._worktree_base.mkdir(parents=True, exist_ok=True)
             worktree = self._worktree_base / session_id
             worktree.mkdir(parents=True, exist_ok=True)
-            llm_plan = await generate_plan_with_llm(
-                backend=self._backend,
+            shaped = await generate_plan_with_llm(
+                backend=self._orchestrator,
                 session_id=session_id,
                 task_descriptions=task_descriptions,
                 worktree=worktree,
             )
-            if llm_plan is not None:
-                log.info("llm_plan_generated", tasks=len(llm_plan.tasks))
-                return llm_plan
-            log.info("llm_planner_fallback_to_heuristics")
+            if shaped is not None:
+                log.info("orchestrator_plan_shaped", tasks=len(shaped.tasks))
+                return shaped
+            log.info("orchestrator_shape_fallback_to_heuristics")
 
         return generate_plan_heuristic(
             session_id=session_id,

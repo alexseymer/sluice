@@ -63,7 +63,10 @@ class GitHubForgeAdapter(ForgeAdapter):
 
     async def create_issue(self, task: PlanTask) -> ForgeIssue:
         client = self._require_client()
-        body = task.description or ""
+        body_parts = [task.description or ""]
+        if task.acceptance_criteria:
+            body_parts.extend(["", "## Acceptance criteria", task.acceptance_criteria])
+        body = "\n".join(part for part in body_parts if part).strip()
         if task.estimated_complexity:
             body = f"{body}\n\n_Estimated complexity: {task.estimated_complexity}_".strip()
 

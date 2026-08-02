@@ -14,6 +14,8 @@ class TaskStatus(StrEnum):
     READY = "ready"
     DISPATCHED = "dispatched"
     IN_PROGRESS = "in_progress"
+    IN_REVIEW = "in_review"
+    NEEDS_REVISION = "needs_revision"
     COMPLETED = "completed"
     FAILED = "failed"
     BLOCKED = "blocked"
@@ -26,11 +28,13 @@ class PlanTask(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     title: str
     description: str = ""
+    acceptance_criteria: str = ""
     backend_id: str | None = None
     depends_on: list[UUID] = Field(default_factory=list)
     estimated_complexity: str | None = None
     status: TaskStatus = TaskStatus.PENDING
     forge_issue_id: str | None = None
+    review_iterations: int = 0
 
 
 class Plan(BaseModel):

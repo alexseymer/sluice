@@ -109,17 +109,20 @@ class PlanApprovalManager:
         if plan.summary:
             lines.extend(["", plan.summary])
 
-        lines.extend(["", f"We'll tackle this in {len(plan.tasks)} step(s):"])
+        lines.extend(["", f"We'll tackle this in {len(plan.tasks)} issue(s):"])
         task_index = {task.id: index for index, task in enumerate(plan.tasks, start=1)}
         for index, task in enumerate(plan.tasks, start=1):
             deps = ""
             if task.depends_on:
                 dep_indexes = [str(task_index[dep_id]) for dep_id in task.depends_on]
-                deps = f" (after step {', '.join(dep_indexes)})"
+                deps = f" (after issue {', '.join(dep_indexes)})"
             detail = ""
             if task.description and task.description != task.title:
                 detail = f" — {task.description}"
-            lines.append(f"{index}. {task.title}{deps}{detail}")
+            criteria = ""
+            if task.acceptance_criteria:
+                criteria = f"\n   Done when: {task.acceptance_criteria}"
+            lines.append(f"{index}. {task.title}{deps}{detail}{criteria}")
 
         if plan.is_approved:
             lines.extend(["", "Status: approved and filed:"])
@@ -131,7 +134,7 @@ class PlanApprovalManager:
                 [
                     "",
                     "If this looks right, reply `/approve` and I'll file the issues "
-                    "and start coordinating the specialist agents. "
+                    "(shaped for best practice) and coordinate worker + reviewer agents. "
                     "Or `/reject` to discard and we can talk again.",
                 ]
             )

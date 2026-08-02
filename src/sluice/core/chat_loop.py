@@ -89,7 +89,7 @@ async def finalize_jour_fixe(app: SluiceApp) -> Plan | None:
         return None
 
     await app.chat.send(
-        OutgoingMessage(text="Alright — I'll summarize what we agreed into a plan…")
+        OutgoingMessage(text="Alright — I'll shape what we agreed into issues for your review…")
     )
     plan = await app.jour_fixe.close_session()
     await app.plan_approval.submit(plan)

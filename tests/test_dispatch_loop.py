@@ -62,6 +62,7 @@ async def test_dispatch_loop_runs_task_and_clears_plan() -> None:
     class SchedulerStub:
         def __init__(self) -> None:
             self.has_pending = True
+            self.pending_count = 1
             self.dispatch_next = AsyncMock(return_value=result)
             self.schedule_ready_tasks = AsyncMock(return_value=[])
 
