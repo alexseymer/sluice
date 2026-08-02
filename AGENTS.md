@@ -76,6 +76,28 @@ or Sluice picks the first backend with budget headroom.
 
 All credentials via `SLUICE_*` env vars — see `.env.example`. Never log or commit secrets.
 
+### MCP servers (`.cursor/mcp.json`)
+
+Project MCP config is committed (no secrets). Servers:
+
+| Server | Purpose | Requirements |
+|--------|---------|--------------|
+| `github` | Issues/PRs/repos via official GitHub MCP | Docker + `GITHUB_PERSONAL_ACCESS_TOKEN` in the environment |
+| `git` | Local git operations on this repo | Node/`npx` |
+| `fetch` | HTTP fetch for docs/APIs | Node/`npx` |
+
+Set a PAT (repo + issues scopes as needed) before starting Cursor:
+
+```bash
+# Windows PowerShell
+$env:GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
+
+# bash
+export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_...
+```
+
+Then reload Cursor (Settings → Tools & MCP → green dots). Do not put PATs in `.cursor/mcp.json`.
+
 ### Pull requests
 
 Use **`ManagePullRequest`** to create and update PRs — not `gh pr create` / `gh pr edit`
