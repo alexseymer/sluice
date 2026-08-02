@@ -30,15 +30,17 @@ Sluice is privacy-first by design on the chat layer specifically — no third-pa
 # Install
 pip install -e ".[dev]"
 
-# Copy and configure secrets
-cp .env.example .env
+# Interactive setup (GitHub device login + Matrix bot/room provisioning)
+sluice setup
 
-# Run locally (starts, logs config, exits — daemon loop coming in Phase 1)
+# Run the daemon
 sluice
 
 # Or via Docker
 docker compose up --build
 ```
+
+`sluice setup` asks for minimal input (repo, a one-time GitHub OAuth App client ID with Device Flow enabled, Matrix homeserver + your login, and ideally Synapse's `registration_shared_secret`). It exchanges tokens itself, creates `@sluice-bot`, opens a private room, and writes credentials into `.env`. You can still copy `.env.example` and fill values by hand if you prefer.
 
 See [`AGENTS.md`](AGENTS.md) for project layout and development commands.
 

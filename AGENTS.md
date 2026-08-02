@@ -12,9 +12,10 @@ plan approval in chat files issues on `/approve`. Claude Code adapter remains a 
 
 ```
 src/sluice/
-  adapters/     # Protocol interfaces + stub implementations (matrix_chat, github_forge, claude_code)
+  adapters/     # Protocol interfaces + implementations (matrix, github, CLI backends)
   core/         # Jour fixe, planner, dependency graph, scheduler, budget manager
   models/       # Pydantic domain models
+  setup/        # Interactive `sluice setup` (GitHub device flow, Matrix provisioning)
   store/        # SQLite persistence
   config.py     # Settings via env vars (prefix: SLUICE_)
   __main__.py   # CLI entrypoint
@@ -35,6 +36,9 @@ ruff check src tests
 
 # Test
 pytest
+
+# First-run credentials (writes .env)
+sluice setup
 
 # Run locally
 sluice

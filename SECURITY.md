@@ -19,6 +19,7 @@ If privacy is your priority, use Signal or Matrix. Telegram is opt-in and docume
 ## Secrets
 
 - Git forge tokens, messaging credentials, and AI CLI auth are supplied via environment variables or a mounted secrets file — never hardcoded, never committed, never logged.
+- Prefer `sluice setup` for first-run GitHub (OAuth device flow) and Matrix (bot + room provisioning). Manual `.env` values remain supported.
 - See `.env.example` for the full list of expected variables (values are placeholders only).
 - Logs are scrubbed/redacted by default; if you find a secret leaking into logs, please open an issue.
 
