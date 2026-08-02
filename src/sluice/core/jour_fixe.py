@@ -42,7 +42,7 @@ class JourFixeManager:
     ) -> None:
         self._chat = chat
         self._planner = planner
-        self._cron = croniter(cron_expression)
+        self._cron_expression = cron_expression
         self._timeout_minutes = timeout_minutes
         self._session: JourFixeSession | None = None
 
@@ -50,8 +50,15 @@ class JourFixeManager:
     def active_session(self) -> JourFixeSession | None:
         return self._session
 
-    def next_scheduled_at(self) -> datetime:
-        return self._cron.get_next(datetime)
+    def next_scheduled_at(self, *, after: datetime | None = None) -> datetime:
+        """Return the next cron fire time as timezone-aware UTC.
+
+        Builds a fresh croniter each call so logging/peeking does not advance
+        a shared iterator past the real next session.
+        """
+        base = after or datetime.now(UTC)
+        base = base.replace(tzinfo=UTC) if base.tzinfo is None else base.astimezone(UTC)
+        return croniter(self._cron_expression, base).get_next(datetime)
 
     def is_session_timed_out(self, *, now: datetime | None = None) -> bool:
         if self._session is None or not self._session.is_active:
