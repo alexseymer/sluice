@@ -195,6 +195,12 @@ class MatrixChatAdapter(ChatAdapter):
         if not body:
             return
 
+        log.info(
+            "matrix_message_received",
+            sender=event.sender,
+            room_id=room.room_id,
+            text_preview=body[:80],
+        )
         await self._queue.put(
             IncomingMessage(
                 text=body,
