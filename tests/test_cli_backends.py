@@ -10,6 +10,7 @@ import pytest
 from sluice.adapters.agy_cli import AgyBackendAdapter
 from sluice.adapters.backend_factory import build_backends
 from sluice.adapters.claude_code import ClaudeCodeBackendAdapter
+from sluice.adapters.codex_cli import CodexBackendAdapter
 from sluice.adapters.cursor_cli import CursorBackendAdapter
 from sluice.config import SluiceSettings
 from sluice.models.plan import PlanTask
@@ -43,6 +44,17 @@ from sluice.store.sqlite import SQLiteStateStore
                 "--mode",
                 "accept-edits",
                 "--dangerously-skip-permissions",
+                "Fix login bug",
+            ],
+        ),
+        (
+            CodexBackendAdapter,
+            [
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--ephemeral",
+                "--skip-git-repo-check",
                 "Fix login bug",
             ],
         ),
@@ -120,3 +132,24 @@ async def test_dispatch_detects_rate_limit_fallback(tmp_path) -> None:
 
     assert result.success is False
     assert result.quota_exceeded is True
+
+
+@pytest.mark.asyncio
+async def test_dispatch_detects_model_fallback(tmp_path) -> None:
+    store = SQLiteStateStore(tmp_path / "sluice.db")
+    await store.initialize()
+    adapter = ClaudeCodeBackendAdapter(store=store, dispatch_timeout_seconds=5)
+
+    process = AsyncMock()
+    process.returncode = 0
+    process.communicate = AsyncMock(return_value=(b"using haiku due to limits", b""))
+
+    with patch(
+        "sluice.adapters.cli_backend.asyncio.create_subprocess_exec",
+        new=AsyncMock(return_value=process),
+    ):
+        result = await adapter.dispatch(PlanTask(title="Task"), worktree=tmp_path / "wt")
+
+    assert result.success is False
+    assert result.fallback_detected is True
+    assert await adapter.detect_fallback() is True

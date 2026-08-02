@@ -28,6 +28,7 @@ class SluiceSettings(BaseSettings):
     jour_fixe_timeout_minutes: int = Field(default=60)
     jour_fixe_scheduler_enabled: bool = Field(default=True)
     plan_auto_approve: bool = Field(default=False)
+    planner_backend: str | None = None
     dispatch_poll_seconds: int = Field(default=30)
     forge_sync_poll_seconds: int = Field(default=60)
 
@@ -74,6 +75,14 @@ class SluiceSettings(BaseSettings):
     agy_window_seconds: int = Field(default=24 * 60 * 60)
     agy_mode: str = Field(default="accept-edits")
     agy_skip_permissions: bool = Field(default=True)
+
+    # OpenAI Codex CLI
+    codex_cli_path: str = Field(default="codex")
+    codex_max_requests: int = Field(default=50)
+    codex_window_seconds: int = Field(default=5 * 60 * 60)
+    codex_sandbox: str = Field(default="workspace-write")
+    codex_ephemeral: bool = Field(default=True)
+    codex_skip_git_repo_check: bool = Field(default=True)
 
     # Deprecated: use ai_backends instead
     ai_backend: str = Field(default="claude_code")

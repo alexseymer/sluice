@@ -114,10 +114,22 @@ class Scheduler:
                 )
                 continue
 
+            if result.fallback_detected:
+                log.warning(
+                    "backend_fallback_failover",
+                    from_backend=backend_id,
+                    task_id=str(task.id),
+                )
+                continue
+
             self._dequeue(slot.task_id)
             task.status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
             task.backend_id = backend_id
             return result
+
+        if last_result is not None and last_result.fallback_detected:
+            task.status = TaskStatus.READY
+            return last_result
 
         self._dequeue(slot.task_id)
         task.status = TaskStatus.FAILED

@@ -71,6 +71,7 @@ class CLIBackendAdapter(BackendAdapter):
         self._dispatch_timeout_seconds = dispatch_timeout_seconds
         self._window_start = self._current_window_start()
         self._running_tasks: dict[str, asyncio.subprocess.Process] = {}
+        self._fallback_latched = False
 
     @property
     def adapter_id(self) -> str:
@@ -157,6 +158,10 @@ class CLIBackendAdapter(BackendAdapter):
                 observed_limit=max(0, state.used_units - 1),
             )
 
+        if fallback_detected:
+            self._fallback_latched = True
+            log.warning("backend_fallback_detected", backend=self._adapter_id)
+
         success = process.returncode == 0 and not quota_exceeded and not fallback_detected
 
         return DispatchResult(
@@ -187,8 +192,7 @@ class CLIBackendAdapter(BackendAdapter):
         )
 
     async def detect_fallback(self) -> bool:
-        state = await self._load_state()
-        return state.exhausted
+        return self._fallback_latched
 
     async def cancel(self, task_id: str) -> None:
         process = self._running_tasks.get(task_id)
@@ -232,6 +236,7 @@ class CLIBackendAdapter(BackendAdapter):
         current = self._current_window_start()
         if current != self._window_start:
             self._window_start = current
+            self._fallback_latched = False
 
     async def _load_state(self):
         from sluice.models.budget_state import BudgetState

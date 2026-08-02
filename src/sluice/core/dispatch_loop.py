@@ -75,6 +75,13 @@ async def _notify_dispatch_result(
             task_id=str(result.task_id),
             backend_id=result.backend_id,
         )
+    elif result.fallback_detected:
+        message = f"Task deferred (fallback model): {title} on {result.backend_id}"
+        log.warning(
+            "task_fallback_deferred",
+            task_id=str(result.task_id),
+            backend_id=result.backend_id,
+        )
     else:
         message = f"Task failed: {title} ({result.backend_id})"
         if result.error:

@@ -29,7 +29,13 @@ class SluiceApp:
         self.forge = self._build_forge(settings)
         self.backends = build_backends(settings, self.store)
         self.budget_manager = BudgetManager(self.backends)
-        self.planner = Planner()
+        planner_backend = (
+            self.backends.get(settings.planner_backend) if settings.planner_backend else None
+        )
+        self.planner = Planner(
+            backend=planner_backend,
+            worktree_base=settings.data_dir / "planner",
+        )
         self.jour_fixe = JourFixeManager(
             chat=self.chat,
             planner=self.planner,

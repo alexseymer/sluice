@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+from pathlib import Path
 
-from sluice.core.planner_inference import build_tasks_with_dependencies
+import structlog
+
+from sluice.adapters.backend import BackendAdapter
+from sluice.core.planner_llm import generate_plan_heuristic, generate_plan_with_llm
 from sluice.models.plan import Plan
+
+log = structlog.get_logger()
 
 
 class Planner:
     """Generates dependency-ordered task lists from jour fixe discussion."""
+
+    def __init__(
+        self,
+        *,
+        backend: BackendAdapter | None = None,
+        worktree_base: Path | None = None,
+    ) -> None:
+        self._backend = backend
+        self._worktree_base = worktree_base or Path(".sluice-data/planner")
 
     async def generate_plan(
         self,
@@ -17,9 +31,25 @@ class Planner:
         session_id: str,
         task_descriptions: list[str],
     ) -> Plan:
-        tasks = build_tasks_with_dependencies(task_descriptions)
-        session_uuid = UUID(session_id) if session_id else None
-        return Plan(tasks=tasks, jour_fixe_session_id=session_uuid)
+        if self._backend is not None:
+            self._worktree_base.mkdir(parents=True, exist_ok=True)
+            worktree = self._worktree_base / session_id
+            worktree.mkdir(parents=True, exist_ok=True)
+            llm_plan = await generate_plan_with_llm(
+                backend=self._backend,
+                session_id=session_id,
+                task_descriptions=task_descriptions,
+                worktree=worktree,
+            )
+            if llm_plan is not None:
+                log.info("llm_plan_generated", tasks=len(llm_plan.tasks))
+                return llm_plan
+            log.info("llm_planner_fallback_to_heuristics")
+
+        return generate_plan_heuristic(
+            session_id=session_id,
+            task_descriptions=task_descriptions,
+        )
 
     async def refine_plan(self, plan: Plan, amendments: str) -> Plan:
         """Apply human amendments to a draft plan."""
@@ -27,5 +57,5 @@ class Planner:
         if not extra:
             return plan
 
-        new_tasks = build_tasks_with_dependencies(extra)
-        return plan.model_copy(update={"tasks": [*plan.tasks, *new_tasks]})
+        amended = generate_plan_heuristic(session_id="", task_descriptions=extra)
+        return plan.model_copy(update={"tasks": [*plan.tasks, *amended.tasks]})
