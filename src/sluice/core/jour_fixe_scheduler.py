@@ -60,8 +60,8 @@ async def _timeout_loop(app: SluiceApp) -> None:
             await app.chat.send(
                 OutgoingMessage(
                     text=(
-                        "Jour fixe timed out — closing the session and generating a plan "
-                        "from collected messages."
+                        "We've been talking for a while — I'll close this jour fixe "
+                        "and draft a plan from what we covered."
                     )
                 )
             )

@@ -41,6 +41,7 @@ class Plan(BaseModel):
     approved_at: datetime | None = None
     tasks: list[PlanTask] = Field(default_factory=list)
     jour_fixe_session_id: UUID | None = None
+    summary: str | None = None
 
     @property
     def is_approved(self) -> bool:

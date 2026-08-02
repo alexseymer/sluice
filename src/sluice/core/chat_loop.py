@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import structlog
 
 from sluice.adapters.chat import IncomingMessage, OutgoingMessage
@@ -12,14 +14,48 @@ from sluice.models.plan import Plan
 
 log = structlog.get_logger()
 
-HELP_TEXT = """Sluice commands:
-  /jour-fixe  — start a jour fixe session (/jourfixe also works)
-  /done       — finish the session and generate a plan
-  /plan       — show the plan awaiting approval
-  /approve    — approve the plan and create GitHub issues
-  /reject     — discard the plan awaiting approval
-  /status     — show current session status
-  /help       — show this message"""
+HELP_TEXT = """We're here to talk through the work — status quo, how to handle problems,
+then a concrete plan I'll coordinate afterward.
+
+When you want to meet, say `/jour-fixe` (or just "jour fixe").
+When you're ready to wrap up, say you're done (or `/done`) and I'll summarize the plan.
+Then `/approve` to file issues, or `/reject` to discard.
+
+Other: `/status`, `/plan`, `/help`"""
+
+_NATURAL_CLOSE = frozenset(
+    {
+        "done",
+        "that's all",
+        "thats all",
+        "that is all",
+        "wrap up",
+        "wrap-up",
+        "let's wrap up",
+        "lets wrap up",
+        "finished",
+        "i'm done",
+        "im done",
+        "i am done",
+        "we're done",
+        "we are done",
+        "end session",
+        "close session",
+        "close",
+        "all done",
+        "that'll do",
+        "thatll do",
+    }
+)
+
+_START_COMMANDS = frozenset({"/jour-fixe", "/jourfixe", "/start", "jour fixe"})
+
+
+def is_natural_close(text: str) -> bool:
+    """Return True when the human is wrapping up the jour fixe in plain language."""
+    normalized = re.sub(r"[.!?,;:]+$", "", text.strip().lower())
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized in _NATURAL_CLOSE
 
 
 async def run_chat_loop(app: SluiceApp) -> None:
@@ -38,6 +74,9 @@ async def finalize_jour_fixe(app: SluiceApp) -> Plan | None:
     if app.jour_fixe.active_session is None or not app.jour_fixe.active_session.is_active:
         return None
 
+    await app.chat.send(
+        OutgoingMessage(text="Alright — I'll summarize what we agreed into a plan…")
+    )
     plan = await app.jour_fixe.close_session()
     await app.plan_approval.submit(plan)
     await app.chat.send(OutgoingMessage(text=app.plan_approval.format_plan(plan)))
@@ -66,30 +105,31 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         await app.chat.send(OutgoingMessage(text=HELP_TEXT))
         return
 
-    if command in {"/jour-fixe", "/jourfixe", "/start", "jour fixe"}:
+    if command in _START_COMMANDS:
         if app.plan_approval.has_pending_plan:
             await app.chat.send(
                 OutgoingMessage(
-                    text="A plan is already awaiting approval. `/approve` or `/reject` it first."
+                    text=(
+                        "There's still a plan waiting on your say-so. "
+                        "`/approve` to file it, or `/reject` to throw it out, "
+                        "then we can meet again."
+                    )
                 )
             )
             return
-        session = await app.jour_fixe.start_session()
-        await app.chat.send(
-            OutgoingMessage(
-                text=f"Jour fixe started (session {session.id}). What should we work on today?"
-            )
-        )
+        await app.jour_fixe.start_session()
         return
 
     if command == "/status":
         session = app.jour_fixe.active_session
         if session is not None and session.is_active:
+            human_turns = sum(1 for t in session.turns if t.role == "human")
             await app.chat.send(
                 OutgoingMessage(
                     text=(
-                        f"Active jour fixe since {session.started_at.isoformat()} "
-                        f"with {len(session.messages)} message(s) collected."
+                        f"We're in a jour fixe right now "
+                        f"({human_turns} note(s) from you so far). "
+                        "Keep talking, or say you're done when you want the plan."
                     )
                 )
             )
@@ -99,18 +139,27 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
             await app.chat.send(
                 OutgoingMessage(
                     text=(
-                        f"No active jour fixe. Plan {plan.id} awaits approval "
-                        f"({len(plan.tasks)} tasks)."
+                        f"No meeting running. A plan with {len(plan.tasks)} task(s) "
+                        "is waiting for `/approve` or `/reject`."
                     )
                 )
             )
             return
-        await app.chat.send(OutgoingMessage(text="No active jour fixe session or pending plan."))
+        next_at = app.jour_fixe.next_scheduled_at()
+        await app.chat.send(
+            OutgoingMessage(
+                text=(
+                    "Nothing active right now. "
+                    f"Next scheduled jour fixe: {next_at.isoformat()}. "
+                    "Or say `/jour-fixe` to start one now."
+                )
+            )
+        )
         return
 
     if command == "/plan":
         if not app.plan_approval.has_pending_plan or app.plan_approval.pending_plan is None:
-            await app.chat.send(OutgoingMessage(text="No plan is awaiting approval."))
+            await app.chat.send(OutgoingMessage(text="No plan is waiting for approval."))
             return
         await app.chat.send(
             OutgoingMessage(text=app.plan_approval.format_plan(app.plan_approval.pending_plan))
@@ -132,14 +181,32 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         except PlanApprovalError as exc:
             await app.chat.send(OutgoingMessage(text=str(exc)))
             return
-        await app.chat.send(OutgoingMessage(text="Plan rejected."))
+        await app.chat.send(
+            OutgoingMessage(text="Okay — plan discarded. We can start a fresh jour fixe whenever.")
+        )
         return
 
-    if command == "/done":
-        if app.jour_fixe.active_session is None or not app.jour_fixe.active_session.is_active:
-            await app.chat.send(OutgoingMessage(text="No active jour fixe session to close."))
+    session = app.jour_fixe.active_session
+    session_active = session is not None and session.is_active
+
+    if command == "/done" or is_natural_close(command):
+        if not session_active:
+            await app.chat.send(
+                OutgoingMessage(text="No jour fixe is running to close.")
+            )
             return
         await finalize_jour_fixe(app)
+        return
+
+    if not session_active:
+        await app.chat.send(
+            OutgoingMessage(
+                text=(
+                    "No jour fixe running — say `/jour-fixe` when you want to meet "
+                    "and we'll start with where things stand."
+                )
+            )
+        )
         return
 
     await app.jour_fixe.handle_message(message)

@@ -4,13 +4,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Literal
 from uuid import UUID, uuid4
 
+import structlog
 from croniter import croniter
 
-from sluice.adapters.chat import ChatAdapter, IncomingMessage
+from sluice.adapters.backend import BackendAdapter
+from sluice.adapters.chat import ChatAdapter, IncomingMessage, OutgoingMessage
+from sluice.core.jour_fixe_chat import NO_BACKEND_REPLY, facilitate_turn
 from sluice.core.planner import Planner
 from sluice.models.plan import Plan
+
+log = structlog.get_logger()
+
+ConversationRole = Literal["human", "assistant"]
+
+
+@dataclass
+class ConversationTurn:
+    role: ConversationRole
+    text: str
+    at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -19,6 +35,7 @@ class JourFixeSession:
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     ended_at: datetime | None = None
     messages: list[IncomingMessage] = field(default_factory=list)
+    turns: list[ConversationTurn] = field(default_factory=list)
     plan: Plan | None = None
 
     @property
@@ -28,6 +45,13 @@ class JourFixeSession:
     def elapsed_seconds(self, *, now: datetime | None = None) -> float:
         current = now or datetime.now(UTC)
         return (current - self.started_at).total_seconds()
+
+    def transcript_lines(self) -> list[str]:
+        lines: list[str] = []
+        for turn in self.turns:
+            label = "Human" if turn.role == "human" else "Assistant"
+            lines.append(f"{label}: {turn.text}")
+        return lines
 
 
 class JourFixeManager:
@@ -39,11 +63,16 @@ class JourFixeManager:
         planner: Planner,
         cron_expression: str,
         timeout_minutes: int = 60,
+        *,
+        conversation_backend: BackendAdapter | None = None,
+        worktree_base: Path | None = None,
     ) -> None:
         self._chat = chat
         self._planner = planner
         self._cron_expression = cron_expression
         self._timeout_minutes = timeout_minutes
+        self._conversation_backend = conversation_backend
+        self._worktree_base = worktree_base or Path(".sluice-data/planner")
         self._session: JourFixeSession | None = None
 
     @property
@@ -78,13 +107,50 @@ class JourFixeManager:
     async def handle_message(self, message: IncomingMessage) -> None:
         if self._session is None or not self._session.is_active:
             return
+
         self._session.messages.append(message)
+        self._session.turns.append(ConversationTurn(role="human", text=message.text))
+
+        if self._conversation_backend is None:
+            await self._chat.send(OutgoingMessage(text=NO_BACKEND_REPLY))
+            return
+
+        await self._chat.send(OutgoingMessage(text="Thinking…"))
+        worktree = self._worktree_base / str(self._session.id) / "chat"
+        turns = [(t.role, t.text) for t in self._session.turns]
+        reply = await facilitate_turn(
+            backend=self._conversation_backend,
+            turns=turns,
+            latest_human=message.text,
+            worktree=worktree,
+        )
+        if reply is None:
+            await self._chat.send(
+                OutgoingMessage(
+                    text=(
+                        "I couldn't get a reply from the AI backend just now. "
+                        "Say a bit more, or tell me when you're done and I'll draft the plan "
+                        "from what we have."
+                    )
+                )
+            )
+            return
+
+        self._session.turns.append(ConversationTurn(role="assistant", text=reply))
+        await self._chat.send(OutgoingMessage(text=reply))
+        log.info(
+            "jour_fixe_facilitator_replied",
+            session_id=str(self._session.id),
+            reply_chars=len(reply),
+        )
 
     async def close_session(self, *, task_descriptions: list[str] | None = None) -> Plan:
         if self._session is None:
             raise RuntimeError("No active jour fixe session")
 
-        descriptions = task_descriptions or [m.text for m in self._session.messages]
+        descriptions = task_descriptions or self._session.transcript_lines()
+        if not descriptions:
+            descriptions = [m.text for m in self._session.messages]
         session_id = self._session.id
         plan = await self._planner.generate_plan(
             session_id=str(session_id),

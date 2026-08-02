@@ -15,27 +15,30 @@ from sluice.models.plan import Plan, PlanTask
 
 log = structlog.get_logger()
 
-_PLANNER_PROMPT = """You are a work planner.
-Convert the jour fixe discussion below into a JSON plan.
+_PLANNER_PROMPT = """You facilitated this jour fixe as Sluice. Extract the agreed
+implementation plan from the full transcript (Human and Assistant turns).
 
-Discussion:
+Transcript:
 {conversation}
 
 Respond with ONLY valid JSON in this shape:
 {{
+  "summary": "2-4 sentence human overview of goals and approach",
   "tasks": [
     {{
       "title": "short task title",
-      "description": "optional longer description",
+      "description": "optional longer description for the specialist agent",
       "depends_on": ["exact title of blocker task"]
     }}
   ]
 }}
 
 Rules:
+- Prefer what was agreed in discussion over abandoned ideas.
 - Each task should be issue-sized (completable in one AI coding session).
 - Use depends_on only when one task must finish before another starts.
 - Omit depends_on or use an empty list when there are no blockers.
+- Ignore slash-command noise and meta talk about Sluice itself.
 """
 
 _JSON_BLOCK = re.compile(r"\{[\s\S]*\}")
@@ -118,7 +121,30 @@ def _parse_plan_output(output: str, *, session_id: str) -> Plan | None:
             if blocker is not None and blocker.id not in task.depends_on:
                 task.depends_on.append(blocker.id)
 
-    return Plan(tasks=tasks, jour_fixe_session_id=_session_uuid(session_id))
+    summary_raw = payload.get("summary")
+    summary = str(summary_raw).strip() if summary_raw else None
+    return Plan(
+        tasks=tasks,
+        jour_fixe_session_id=_session_uuid(session_id),
+        summary=summary or None,
+    )
+
+
+def _human_task_lines(task_descriptions: list[str]) -> list[str]:
+    """Drop assistant turns and role prefixes for heuristic planning."""
+    lines: list[str] = []
+    for raw in task_descriptions:
+        text = raw.strip()
+        if not text:
+            continue
+        lower = text.lower()
+        if lower.startswith("assistant:"):
+            continue
+        if lower.startswith("human:"):
+            text = text.split(":", maxsplit=1)[1].strip()
+        if text:
+            lines.append(text)
+    return lines
 
 
 def generate_plan_heuristic(
@@ -126,7 +152,7 @@ def generate_plan_heuristic(
     session_id: str,
     task_descriptions: list[str],
 ) -> Plan:
-    tasks = build_tasks_with_dependencies(task_descriptions)
+    tasks = build_tasks_with_dependencies(_human_task_lines(task_descriptions))
     return Plan(tasks=tasks, jour_fixe_session_id=_session_uuid(session_id))
 
 

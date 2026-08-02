@@ -97,5 +97,5 @@ async def test_format_plan_shows_dependencies(forge: AsyncMock, store: AsyncMock
     text = manager.format_plan(plan)
 
     assert "1. Schema" in text
-    assert "depends on task 1" in text
+    assert "after step 1" in text
     assert "/approve" in text
