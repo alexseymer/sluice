@@ -43,6 +43,9 @@ class MatrixChatAdapter(ChatAdapter):
         self._queue: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._running = False
         self._logged_sync_error = False
+        # Drop timeline events from the initial catch-up sync so a restart
+        # does not re-run old /jour-fixe /done /approve commands.
+        self._catching_up = False
 
     @property
     def adapter_id(self) -> str:
@@ -85,8 +88,14 @@ class MatrixChatAdapter(ChatAdapter):
         self._client.add_response_callback(self._on_sync_response)
 
         await self._ensure_joined_room()
+        self._catching_up = True
+        try:
+            await self._client.sync(timeout=0, full_state=True)
+        finally:
+            self._catching_up = False
+
         self._sync_task = asyncio.create_task(
-            self._client.sync_forever(timeout=self._sync_timeout_ms, full_state=True),
+            self._client.sync_forever(timeout=self._sync_timeout_ms, full_state=False),
             name="matrix-sync",
         )
         self._running = True
@@ -184,6 +193,8 @@ class MatrixChatAdapter(ChatAdapter):
         )
 
     async def _on_room_message(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        if self._catching_up:
+            return
         if room.room_id != self._room_id:
             return
         if event.sender == self._user_id:

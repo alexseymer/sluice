@@ -2,7 +2,7 @@
 set -e
 
 data_dir="${SLUICE_DATA_DIR:-/data}"
-mkdir -p "$data_dir/worktrees"
+mkdir -p "$data_dir/worktrees" "$data_dir/matrix-store"
 
 if [ "$(id -u)" = "0" ]; then
   chown -R sluice:sluice "$data_dir" 2>/dev/null || true
