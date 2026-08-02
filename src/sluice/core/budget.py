@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sluice.adapters.backend import BackendAdapter
-from sluice.models.budget import BudgetSnapshot, BudgetWindow
+from sluice.models.budget import BudgetSnapshot
 
 
 class BudgetManager:
