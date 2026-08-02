@@ -20,6 +20,17 @@ def jour_fixe() -> JourFixeManager:
     return JourFixeManager(chat=chat, planner=Planner(), cron_expression="0 9 * * *")
 
 
+def test_next_scheduled_at_is_utc_aware(jour_fixe: JourFixeManager) -> None:
+    next_at = jour_fixe.next_scheduled_at()
+    again = jour_fixe.next_scheduled_at()
+
+    assert next_at.tzinfo is not None
+    assert next_at.utcoffset() == timedelta(0)
+    assert again == next_at
+    # Peeks must not crash when subtracting from aware now (scheduler loop).
+    assert (next_at - datetime.now(UTC)).total_seconds() > 0
+
+
 def test_session_timeout_detected(jour_fixe: JourFixeManager) -> None:
     session = JourFixeSession()
     session.started_at = datetime.now(UTC) - timedelta(minutes=61)

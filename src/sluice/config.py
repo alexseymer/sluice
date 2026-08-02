@@ -48,6 +48,8 @@ class SluiceSettings(BaseSettings):
     github_owner: str | None = None
     github_repo: str | None = None
     github_token: str | None = None
+    # Public OAuth App client ID used by `sluice setup` device flow (not a secret).
+    github_oauth_client_id: str | None = None
 
     # AI backends — comma-separated list: claude_code,cursor,agy
     ai_backends: str = Field(default="claude_code,cursor,agy")

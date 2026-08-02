@@ -14,11 +14,12 @@ from sluice.core.chat_loop import run_chat_loop
 from sluice.core.dispatch_loop import run_dispatch_loop
 from sluice.core.forge_sync import run_forge_sync_loop
 from sluice.core.jour_fixe_scheduler import run_jour_fixe_scheduler
+from sluice.setup.cli import add_setup_parser
 
 log = structlog.get_logger()
 
 
-async def _run() -> int:
+async def _run_daemon() -> int:
     settings = load_settings()
     app = SluiceApp(settings)
     await app.start()
@@ -41,11 +42,7 @@ async def _run() -> int:
     return 0
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(prog="sluice", description="AI work orchestrator")
-    parser.add_argument("--version", action="version", version=f"sluice {__version__}")
-    parser.parse_args()
-
+def _run_daemon_cmd(_args: argparse.Namespace) -> int:
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,
@@ -54,11 +51,27 @@ def main() -> None:
         ],
         wrapper_class=structlog.make_filtering_bound_logger(0),
     )
-
     try:
-        raise SystemExit(asyncio.run(_run()))
+        return asyncio.run(_run_daemon())
     except KeyboardInterrupt:
-        raise SystemExit(130) from None
+        return 130
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="sluice", description="AI work orchestrator")
+    parser.add_argument("--version", action="version", version=f"sluice {__version__}")
+    subparsers = parser.add_subparsers(dest="command")
+
+    run_parser = subparsers.add_parser("run", help="Start the Sluice daemon (default)")
+    run_parser.set_defaults(handler=_run_daemon_cmd)
+    add_setup_parser(subparsers)
+
+    args = parser.parse_args()
+    handler = getattr(args, "handler", None)
+    if handler is None:
+        # `sluice` with no subcommand starts the daemon (back-compat).
+        raise SystemExit(_run_daemon_cmd(args))
+    raise SystemExit(handler(args))
 
 
 if __name__ == "__main__":
