@@ -45,3 +45,8 @@ class Plan(BaseModel):
     @property
     def is_approved(self) -> bool:
         return self.approved_at is not None
+
+
+def plan_is_complete(plan: Plan) -> bool:
+    terminal = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
+    return all(task.status in terminal for task in plan.tasks)

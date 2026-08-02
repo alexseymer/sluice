@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sluice.core.dispatch_loop import on_plan_approved, plan_is_complete, run_dispatch_loop
-from sluice.models.plan import Plan, PlanTask, TaskStatus
+from sluice.core.dispatch_loop import on_plan_approved, run_dispatch_loop
+from sluice.models.plan import Plan, PlanTask, TaskStatus, plan_is_complete
 from sluice.models.schedule import DispatchResult
 
 

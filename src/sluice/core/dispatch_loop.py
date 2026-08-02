@@ -8,16 +8,12 @@ import structlog
 
 from sluice.adapters.chat import OutgoingMessage
 from sluice.core.app import SluiceApp
+from sluice.core.forge_sync import close_forge_issue_for_task
 from sluice.core.scheduler import Scheduler
-from sluice.models.plan import Plan, TaskStatus
+from sluice.models.plan import Plan, plan_is_complete
 from sluice.models.schedule import DispatchResult
 
 log = structlog.get_logger()
-
-
-def plan_is_complete(plan: Plan) -> bool:
-    terminal = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
-    return all(task.status in terminal for task in plan.tasks)
 
 
 async def on_plan_approved(app: SluiceApp, plan: Plan) -> None:
@@ -70,6 +66,8 @@ async def _notify_dispatch_result(
             backend_id=result.backend_id,
             success=True,
         )
+        if task is not None:
+            await close_forge_issue_for_task(app, task)
     elif result.quota_exceeded:
         message = f"Task deferred (quota): {title} on {result.backend_id}"
         log.warning(

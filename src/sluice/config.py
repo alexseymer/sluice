@@ -29,6 +29,7 @@ class SluiceSettings(BaseSettings):
     jour_fixe_scheduler_enabled: bool = Field(default=True)
     plan_auto_approve: bool = Field(default=False)
     dispatch_poll_seconds: int = Field(default=30)
+    forge_sync_poll_seconds: int = Field(default=60)
 
     # Chat (Phase 1: matrix or signal)
     chat_backend: str = Field(default="matrix")

@@ -75,6 +75,30 @@ class SQLiteStateStore:
                 return None
             return Plan.model_validate(json.loads(row[0]))
 
+    async def load_latest_incomplete_approved_plan(self) -> Plan | None:
+        async with (
+            aiosqlite.connect(self._db_path) as db,
+            db.execute(
+                """
+                SELECT data FROM plans
+                WHERE approved_at IS NOT NULL
+                ORDER BY approved_at DESC
+                """
+            ) as cursor,
+        ):
+            async for row in cursor:
+                plan = Plan.model_validate(json.loads(row[0]))
+                if self._plan_has_incomplete_tasks(plan):
+                    return plan
+        return None
+
+    @staticmethod
+    def _plan_has_incomplete_tasks(plan: Plan) -> bool:
+        from sluice.models.plan import TaskStatus
+
+        terminal = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
+        return any(task.status not in terminal for task in plan.tasks)
+
     async def get_budget_state(
         self,
         backend_id: str,

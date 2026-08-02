@@ -59,7 +59,22 @@ class SluiceApp:
                 await initialize()
         await self.chat.start()
         await self.forge.start()
+        await self._restore_active_plan()
         log.info("sluice_started", version="0.1.0")
+
+    async def _restore_active_plan(self) -> None:
+        plan = await self.store.load_latest_incomplete_approved_plan()
+        if plan is None:
+            return
+
+        self.active_plan = plan
+        slots = await self.scheduler.schedule_ready_tasks(plan)
+        log.info(
+            "active_plan_restored",
+            plan_id=str(plan.id),
+            tasks=len(plan.tasks),
+            queued_slots=len(slots),
+        )
 
     async def stop(self) -> None:
         await self.chat.stop()
