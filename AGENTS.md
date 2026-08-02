@@ -28,28 +28,27 @@ Dockerfile
 ### Commands
 
 ```bash
-# Install (editable)
+# --- Preferred: Docker (pull published GHCR image) ---
+cp .env.example .env
+# docker login ghcr.io   # only if the package is private
+docker compose run --rm sluice setup
+docker compose up -d
+docker compose pull && docker compose up -d --force-recreate
+docker compose logs -f sluice
+
+# --- Dev (host Python) ---
 pip install -e ".[dev]"
-
-# Lint
 ruff check src tests
-
-# Test
 pytest
 
-# First-run credentials (writes .env)
-sluice setup
-
-# Run locally
-sluice
-
-# Docker
-docker compose up --build
+# --- Dev image (optional; normal users should pull, not build) ---
+docker build -t sluice:local .
 ```
 
 ### Environment baseline
 
-- Python 3.12 (`python3`, `pip3`) — no `python` alias; use `python3`.
+- **Runtime:** Docker / Docker Compose (primary).
+- Python 3.12 (`python3`, `pip3`) for local tests — no `python` alias on Cloud VMs; use `python3`.
 - Node.js 22, GNU Make 4.3.
 - Docker may need to be installed for `docker compose up` (not pre-installed on all VMs).
 

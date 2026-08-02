@@ -6,7 +6,7 @@ You talk to Sluice once a day (or on whatever cadence you set) in a short **jour
 
 ## Status
 
-Phase 1 scaffold in place — Python package, core interfaces, stub adapters, and Docker Compose. Adapters are not yet wired to real services. See [`docs/prd.md`](docs/prd.md) for the full product spec, and [`ROADMAP.md`](ROADMAP.md) for what's being built first.
+Phase 1 is runnable via **Docker Compose** — Matrix chat, GitHub issues, CLI backend adapters, jour fixe scheduling, and an interactive setup wizard. See [`docs/prd.md`](docs/prd.md) for the product spec and [`ROADMAP.md`](ROADMAP.md) for what's next.
 
 ## Why
 
@@ -24,25 +24,55 @@ AI coding subscriptions have usage windows. Burn through them in a burst and you
 
 Sluice is privacy-first by design on the chat layer specifically — no third-party SaaS relay of your conversations, self-hostable end-to-end via Docker. See [`SECURITY.md`](SECURITY.md) for details and current caveats (e.g. Telegram's lack of E2E for bot chats).
 
-## Getting started
+## Getting started (Docker)
+
+Sluice is meant to run as a container. The image is built on GitHub Actions and
+published to GHCR (`ghcr.io/alexseymer/sluice`). Compose only pulls — no local build.
 
 ```bash
-# Install
-pip install -e ".[dev]"
+# 1. Create env file (secrets stay on the host, mounted into the container)
+cp .env.example .env
 
-# Interactive setup (GitHub device login + Matrix bot/room provisioning)
-sluice setup
+# 2. If the package is private, log in once:
+#    echo YOUR_GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 
-# Run the daemon
-sluice
+# 3. Interactive setup (pulls the image, then runs the wizard)
+docker compose run --rm sluice setup
 
-# Or via Docker
-docker compose up --build
+# 4. Run the daemon
+docker compose up -d
+
+# Logs
+docker compose logs -f sluice
 ```
 
-`sluice setup` asks for minimal input (repo, a one-time GitHub OAuth App client ID with Device Flow enabled, Matrix homeserver + your login, and ideally Synapse's `registration_shared_secret`). It exchanges tokens itself, creates `@sluice-bot`, opens a private room, and writes credentials into `.env`. You can still copy `.env.example` and fill values by hand if you prefer.
+After setup (or any `.env` change), recreate so Compose injects the new variables:
 
-See [`AGENTS.md`](AGENTS.md) for project layout and development commands.
+```bash
+docker compose up -d --force-recreate
+```
+
+To refresh to the newest published image:
+
+```bash
+docker compose pull
+docker compose up -d --force-recreate
+```
+
+`sluice setup` asks for minimal input (repo, a GitHub OAuth App client ID with Device Flow enabled, Matrix homeserver + your login, and ideally Synapse's `registration_shared_secret`). Existing `.env` values are offered as defaults; a still-valid GitHub token skips device login.
+
+### Local development (optional)
+
+For tests and hacking on the Python package without Docker:
+
+```bash
+pip install -e ".[dev]"
+ruff check src tests
+pytest
+sluice setup   # same wizard; still writes .env
+```
+
+See [`AGENTS.md`](AGENTS.md) for project layout and agent notes.
 
 ## License
 
