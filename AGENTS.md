@@ -65,3 +65,12 @@ or Sluice picks the first backend with budget headroom.
 ### Secrets
 
 All credentials via `SLUICE_*` env vars — see `.env.example`. Never log or commit secrets.
+
+### Pull requests
+
+Every standard PR must be **assigned to `alexseymer`**.
+
+- After creating a PR with `ManagePullRequest`, run:
+  `gh pr edit <pr-url> --add-assignee alexseymer`
+- With `gh pr create`, pass `--assignee alexseymer`
+- See `.cursor/rules/pull-requests.mdc` for full PR conventions
