@@ -44,6 +44,7 @@ class SluiceApp:
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.settings.worktree_base_dir.mkdir(parents=True, exist_ok=True)
         await self.store.initialize()
+        await self.chat.start()
         log.info("sluice_started", version="0.1.0")
 
     async def stop(self) -> None:
@@ -57,6 +58,10 @@ class SluiceApp:
                 homeserver=settings.matrix_homeserver or "",
                 room_id=settings.matrix_room_id or "",
                 access_token=settings.matrix_access_token or "",
+                user_id=settings.matrix_user_id,
+                allowed_sender=settings.matrix_allowed_sender,
+                store_path=settings.data_dir / "matrix-store",
+                sync_timeout_ms=settings.matrix_sync_timeout_ms,
             )
         raise NotImplementedError(f"Chat backend {settings.chat_backend!r} not yet supported")
 

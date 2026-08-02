@@ -59,10 +59,13 @@ class SQLiteStateStore:
             await db.commit()
 
     async def load_plan(self, plan_id: UUID) -> Plan | None:
-        async with aiosqlite.connect(self._db_path) as db, db.execute(
-            "SELECT data FROM plans WHERE id = ?",
-            (str(plan_id),),
-        ) as cursor:
+        async with (
+            aiosqlite.connect(self._db_path) as db,
+            db.execute(
+                "SELECT data FROM plans WHERE id = ?",
+                (str(plan_id),),
+            ) as cursor,
+        ):
             row = await cursor.fetchone()
             if row is None:
                 return None

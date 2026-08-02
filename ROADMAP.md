@@ -10,7 +10,7 @@ Jour fixe → plan → GitHub issues → dispatch to one AI CLI backend → basi
 - [ ] GitHub adapter: create/update/link issues
 - [ ] One AI CLI backend adapter (candidate: Claude Code, given documented CLI/output format)
 - [ ] Basic time-window budget tracking for that backend
-- [ ] One chat backend (Matrix or Signal)
+- [x] One chat backend (Matrix — Signal stub remains)
 - [x] Docker Compose bring-up
 
 ## Phase 2 — Multi-backend
