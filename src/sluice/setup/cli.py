@@ -17,7 +17,12 @@ from sluice.setup.github_oauth import (
     parse_github_repo,
     verify_github_token,
 )
-from sluice.setup.matrix_provision import MatrixSetupError, localpart_from_mxid, provision_matrix
+from sluice.setup.matrix_provision import (
+    BotAlreadyExistsError,
+    MatrixSetupError,
+    localpart_from_mxid,
+    provision_matrix,
+)
 
 
 def _prompt(label: str, *, default: str | None = None) -> str:
@@ -152,14 +157,45 @@ async def _setup_matrix(*, env_path: Path, settings: SluiceSettings) -> dict[str
         default=_bot_localpart_default(settings.matrix_user_id),
     )
 
-    result = await provision_matrix(
-        homeserver=homeserver,
-        operator_user=operator,
-        operator_password=password,
-        shared_secret=shared_secret or None,
-        registration_token=registration_token or None,
-        bot_localpart=bot_localpart or "sluice-bot",
-    )
+    bot_password = settings.matrix_bot_password
+    existing_token = settings.matrix_access_token
+    existing_room = settings.matrix_room_id
+
+    try:
+        result = await provision_matrix(
+            homeserver=homeserver,
+            operator_user=operator,
+            operator_password=password,
+            shared_secret=shared_secret or None,
+            registration_token=registration_token or None,
+            bot_localpart=bot_localpart or "sluice-bot",
+            existing_bot_token=existing_token,
+            existing_room_id=existing_room,
+            bot_password=bot_password,
+        )
+    except BotAlreadyExistsError as exc:
+        print(f"\n{exc}")
+        print("Reusing the existing account — provide the bot password or an access token.")
+        bot_password = _prompt_secret("Bot password (leave blank to paste a token instead)")
+        token_override = None
+        if not bot_password:
+            token_override = _prompt("Bot access token")
+            if not token_override:
+                raise MatrixSetupError(
+                    "Need the existing bot password or access token to continue."
+                ) from exc
+        result = await provision_matrix(
+            homeserver=homeserver,
+            operator_user=operator,
+            operator_password=password,
+            shared_secret=None,
+            registration_token=None,
+            bot_localpart=bot_localpart or "sluice-bot",
+            existing_bot_token=token_override or existing_token,
+            existing_room_id=existing_room,
+            bot_password=bot_password or None,
+        )
+
     print(f"Matrix OK — bot {result.bot_user_id} in room {result.room_id}")
     print(f"Accept the invite in your client as {result.allowed_sender}.")
     values = {
@@ -170,6 +206,8 @@ async def _setup_matrix(*, env_path: Path, settings: SluiceSettings) -> dict[str
         "SLUICE_MATRIX_ROOM_ID": result.room_id,
         "SLUICE_MATRIX_ALLOWED_SENDER": result.allowed_sender,
     }
+    if result.bot_password:
+        values["SLUICE_MATRIX_BOT_PASSWORD"] = result.bot_password
     upsert_env_file(env_path, values)
     return values
 

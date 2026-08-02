@@ -40,6 +40,8 @@ class SluiceSettings(BaseSettings):
     matrix_user_id: str | None = None
     matrix_allowed_sender: str | None = None
     matrix_sync_timeout_ms: int = Field(default=30_000)
+    # Optional bot password saved by `sluice setup` for re-login if the user already exists.
+    matrix_bot_password: str | None = None
     signal_phone_number: str | None = None
     signal_recipient: str | None = None
 
