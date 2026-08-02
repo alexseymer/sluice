@@ -60,6 +60,7 @@ async def approve_plan(app: SluiceApp) -> Plan:
 
 async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
     command = message.text.strip().lower()
+    log.info("chat_command", sender=message.sender, command=command[:80])
 
     if command in {"/help", "help"}:
         await app.chat.send(OutgoingMessage(text=HELP_TEXT))
