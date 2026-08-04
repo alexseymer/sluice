@@ -34,10 +34,15 @@ class SluiceSettings(BaseSettings):
     # Second CLI agent: reviews worker output against acceptance criteria per issue.
     reviewer_backend: str | None = None
     max_review_iterations: int = Field(default=3)
-    # OpenAI-compatible chat API for Matrix jour fixe (recommended in Docker).
+    # Deprecated / unused: Sluice uses subscription CLIs, not metered chat APIs.
     jour_fixe_llm_base_url: str | None = None
     jour_fixe_llm_api_key: str | None = None
     jour_fixe_llm_model: str = Field(default="gpt-4o-mini")
+    # Install + Matrix-auth enabled CLIs after daemon start (Docker/Linux).
+    cli_bootstrap_enabled: bool = Field(default=True)
+    cli_auth_timeout_seconds: int = Field(default=900)
+    # Persistent home for CLI binaries + credentials (Docker: /data/home).
+    cli_home_dir: Path | None = None
     dispatch_poll_seconds: int = Field(default=30)
     forge_sync_poll_seconds: int = Field(default=60)
 
@@ -66,8 +71,8 @@ class SluiceSettings(BaseSettings):
     # Public OAuth App client ID used by `sluice setup` device flow (not a secret).
     github_oauth_client_id: str | None = None
 
-    # AI backends — comma-separated list: claude_code,cursor,agy
-    ai_backends: str = Field(default="claude_code,cursor,agy")
+    # AI backends — comma-separated list: claude_code,cursor,agy,codex
+    ai_backends: str = Field(default="cursor,agy")
     default_backend: str | None = None
     budget_safety_margin: float = Field(default=0.85)  # legacy; probing ignores this
     backend_dispatch_timeout_seconds: int = Field(default=3600)
@@ -114,6 +119,12 @@ class SluiceSettings(BaseSettings):
             # sqlite+aiosqlite:///.sluice-data/sluice.db -> .sluice-data/sluice.db
             return Path(self.database_url.split(":///", maxsplit=1)[1])
         return self.data_dir / "sluice.db"
+
+    @property
+    def resolved_cli_home_dir(self) -> Path:
+        if self.cli_home_dir is not None:
+            return self.cli_home_dir
+        return self.data_dir / "home"
 
     def enabled_backend_ids(self) -> list[str]:
         raw = self.ai_backends.strip()

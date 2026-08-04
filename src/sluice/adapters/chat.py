@@ -30,6 +30,11 @@ class ChatAdapter(ABC):
     def adapter_id(self) -> str:
         """Unique identifier for this adapter instance."""
 
+    @property
+    def is_configured(self) -> bool:
+        """Whether credentials are present enough to connect."""
+        return True
+
     @abstractmethod
     async def start(self) -> None:
         """Connect to the chat backend and begin listening."""

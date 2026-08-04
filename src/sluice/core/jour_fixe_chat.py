@@ -41,21 +41,19 @@ Respond as the jour fixe facilitator.
 """
 
 NO_BACKEND_REPLY = (
-    "I can listen and take notes, but I need an AI path for conversation. "
-    "Either install an AI CLI on the Sluice host (Linux container needs a Linux CLI), "
-    "or set SLUICE_JOUR_FIXE_LLM_BASE_URL, SLUICE_JOUR_FIXE_LLM_API_KEY, and "
-    "SLUICE_JOUR_FIXE_LLM_MODEL to an OpenAI-compatible chat API. "
+    "I can listen and take notes, but I need a signed-in AI coding CLI for conversation. "
+    "Sluice installs the backends listed in SLUICE_AI_BACKENDS on startup and asks you "
+    "to finish login over Matrix (no metered chat API). "
+    "Check container logs, reply to any pending auth prompt, or say `/cli-auth`. "
     "You can still describe the work and say you're done for a draft plan."
 )
 
 _CLI_MISSING_HINT = (
-    "I can't reach the AI coding CLI from this Docker container "
-    "(the Linux image doesn't include Windows tools like Cursor `agent`). "
-    "For Matrix conversation, set:\n"
-    "• SLUICE_JOUR_FIXE_LLM_BASE_URL (e.g. https://api.openai.com/v1)\n"
-    "• SLUICE_JOUR_FIXE_LLM_API_KEY\n"
-    "• SLUICE_JOUR_FIXE_LLM_MODEL\n"
-    "Coding-task dispatch can still use CLIs later on a host where they exist."
+    "I can't reach the AI coding CLI from this container yet. "
+    "On startup Sluice installs the backends in SLUICE_AI_BACKENDS and posts "
+    "login links here (Cursor: open the link; agy: open the link and reply with "
+    "the verification code). Say `/cli-auth` to retry. "
+    "Coding-task dispatch uses the same subscription CLIs."
 )
 
 
@@ -204,17 +202,8 @@ async def facilitate_turn(
     backend: BackendAdapter | None = None,
     llm: JourFixeLlmSettings | None = None,
 ) -> tuple[str | None, str | None]:
-    """Return (assistant_reply, user_facing_error). Prefer LLM HTTP, then CLI."""
-    if llm is not None and llm.is_configured:
-        reply = await facilitate_via_llm(
-            settings=llm,
-            turns=turns,
-            latest_human=latest_human,
-        )
-        if reply:
-            return reply, None
-        log.warning("jour_fixe_llm_failed_falling_back_to_cli")
-
+    """Return (assistant_reply, user_facing_error). Subscription CLIs only."""
+    del llm  # Kept for call-site compatibility; metered APIs are intentionally unused.
     if backend is not None:
         return await facilitate_via_cli(
             backend=backend,

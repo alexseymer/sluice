@@ -134,8 +134,8 @@ class CLIBackendAdapter(BackendAdapter):
                 success=False,
                 error=(
                     f"CLI not found: {self._cli_path!r}. "
-                    "Install it on the Sluice host, or set SLUICE_JOUR_FIXE_LLM_* "
-                    "for Matrix conversation without a local CLI."
+                    "Sluice installs enabled backends on startup — check Matrix "
+                    "for login prompts or say /cli-auth."
                 ),
                 completed_at=datetime.now(UTC),
             )

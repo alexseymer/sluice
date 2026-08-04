@@ -15,7 +15,7 @@ src/sluice/
   adapters/     # Protocol interfaces + implementations (matrix, github, CLI backends)
   core/         # Jour fixe, planner, dependency graph, scheduler, budget manager
   models/       # Pydantic domain models
-  setup/        # Interactive `sluice setup` (GitHub device flow, Matrix provisioning)
+  setup/        # Interactive `sluice setup` + runtime CLI install/Matrix auth
   store/        # SQLite persistence
   config.py     # Settings via env vars (prefix: SLUICE_)
   __main__.py   # CLI entrypoint
@@ -69,8 +69,12 @@ need to reinstall manually unless dependencies change mid-run.
 6. ~~Budget tracking wired to SQLite store~~ (done)
 
 AI CLI backends: Claude Code (`claude`), Cursor (`agent`), and Antigravity (`agy`).
-Enable via `SLUICE_AI_BACKENDS=claude_code,cursor,agy`. Tasks can set `backend_id`
-or Sluice picks the first backend with budget headroom.
+Enable via `SLUICE_AI_BACKENDS=cursor,agy` (or include `claude_code` / `codex`).
+On Docker start, Sluice installs enabled Linux CLIs under `/data/home` and posts
+subscription login links to Matrix (Cursor: open the link; `agy`: open the link and
+reply with the verification code). Retry with `/cli-auth`. Jour fixe uses those CLIs
+only — no metered chat API. Tasks can set `backend_id` or Sluice picks the first
+backend with budget headroom.
 
 ### Secrets
 

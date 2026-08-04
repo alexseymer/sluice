@@ -9,7 +9,7 @@ def test_default_settings() -> None:
     settings = SluiceSettings()
     assert settings.chat_backend == "matrix"
     assert settings.forge_backend == "github"
-    assert settings.enabled_backend_ids() == ["claude_code", "cursor", "agy"]
+    assert settings.enabled_backend_ids() == ["cursor", "agy"]
     assert settings.budget_safety_margin == 0.85
 
 
