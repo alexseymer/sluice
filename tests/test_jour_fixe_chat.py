@@ -83,7 +83,7 @@ async def test_facilitate_turn_cli_missing_hint(tmp_path: Path) -> None:
     )
     assert reply is None
     assert error is not None
-    assert "SLUICE_JOUR_FIXE_LLM" in error
+    assert "/cli-auth" in error or "SLUICE_AI_BACKENDS" in error
 
 
 @pytest.mark.asyncio
@@ -138,4 +138,5 @@ async def test_handle_message_without_backend_explains(tmp_path: Path) -> None:
     await manager.handle_message(
         IncomingMessage(text="Hello", sender="@you:example.com")
     )
-    assert "SLUICE_JOUR_FIXE_LLM" in chat.send.await_args.args[0].text
+    text = chat.send.await_args.args[0].text
+    assert "SLUICE_AI_BACKENDS" in text or "/cli-auth" in text

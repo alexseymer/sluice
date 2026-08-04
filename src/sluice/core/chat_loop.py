@@ -11,6 +11,7 @@ from sluice.core.app import SluiceApp
 from sluice.core.dispatch_loop import on_plan_approved
 from sluice.core.plan_approval import PlanApprovalError
 from sluice.models.plan import Plan
+from sluice.setup.cli_runtime import bootstrap_ai_clis
 
 log = structlog.get_logger()
 
@@ -21,7 +22,7 @@ When you want to meet, say `/jour-fixe` (or just "jour fixe").
 When you're ready to wrap up, say you're done (or `/done`) and I'll summarize the plan.
 Then `/approve` to file issues, or `/reject` to discard.
 
-Other: `/status`, `/plan`, `/help`"""
+Other: `/status`, `/plan`, `/cli-auth`, `/help`"""
 
 _NATURAL_CLOSE = frozenset(
     {
@@ -117,6 +118,17 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
 
     if command in {"/help", "help"}:
         await app.chat.send(OutgoingMessage(text=HELP_TEXT))
+        return
+
+    if command in {"/cli-auth", "/auth-cli", "/cli-login"}:
+        drain = getattr(app.chat, "drain_pending_messages", None)
+        if callable(drain):
+            drain()
+        await bootstrap_ai_clis(
+            settings=app.settings,
+            chat=app.chat,
+            home=app.settings.resolved_cli_home_dir,
+        )
         return
 
     if command in _START_COMMANDS:

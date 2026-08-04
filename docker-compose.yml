@@ -1,14 +1,16 @@
 services:
   sluice:
     # Published by GitHub Actions to GHCR on every main push.
-    # Pull only — do not build locally for normal use.
+    # Local changes: `docker compose build` then
+    # `docker compose up -d --force-recreate --pull never`
     image: ghcr.io/alexseymer/sluice:latest
+    build: .
     pull_policy: always
     container_name: sluice
     env_file:
       - .env
     volumes:
-      # Persistent state (plans, budget, matrix sync store)
+      # Persistent state (plans, budget, matrix sync store, CLI home/creds)
       - sluice-data:/data
       # Setup writes credentials here; compose reloads them on recreate
       - ./.env:/app/.env

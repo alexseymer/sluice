@@ -137,6 +137,23 @@ class MatrixChatAdapter(ChatAdapter):
         while self._running:
             yield await self._queue.get()
 
+    async def wait_for_message(self, *, timeout_seconds: float) -> IncomingMessage:
+        """Wait for the next allowed incoming message (used for CLI auth codes)."""
+        if not self._running:
+            raise RuntimeError("Matrix client is not started")
+        return await asyncio.wait_for(self._queue.get(), timeout=timeout_seconds)
+
+    def drain_pending_messages(self) -> int:
+        """Drop queued messages so an auth wait does not consume stale commands."""
+        dropped = 0
+        while True:
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            dropped += 1
+        return dropped
+
     async def start_jour_fixe_prompt(self) -> None:
         await self.send(
             OutgoingMessage(

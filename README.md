@@ -17,7 +17,8 @@ You talk to Sluice once a day (or on whatever cadence you set) in a short **jour
 | Component | Status |
 |-----------|--------|
 | Matrix chat + jour fixe commands | ✅ |
-| Conversational jour fixe (CLI or LLM API) | ✅ |
+| Conversational jour fixe (subscription CLIs) | ✅ |
+| Docker CLI install + Matrix login (`/cli-auth`) | ✅ |
 | Orchestrator issue shaping + worker/reviewer loop | ✅ |
 | GitHub issues + dependency links | ✅ |
 | AI backends (Claude Code, Cursor, Agy, Codex) | ✅ |
@@ -41,7 +42,9 @@ Sluice is **issue-driven**: GitHub issues are the backbone of the plan. A daily 
 
 ### 1. Jour fixe chat
 
-You meet Sluice in Matrix on a schedule (or on demand with `/jour-fixe`). A **facilitator** — your configured AI CLI on the host, or an OpenAI-compatible LLM API in Docker — helps you talk through status quo, problems, and how to handle them. This is planning conversation, not execution.
+You meet Sluice in Matrix on a schedule (or on demand with `/jour-fixe`). A **facilitator** — your configured AI coding CLI (subscription) — helps you talk through status quo, problems, and how to handle them. This is planning conversation, not execution.
+
+In Docker, Sluice installs the Linux CLIs listed in `SLUICE_AI_BACKENDS` on startup (into `/data/home`) and posts login links to Matrix. For Cursor, open the link; for `agy`, open the link and reply with the verification code. Say `/cli-auth` to retry.
 
 ### 2. AI shapes issues
 
@@ -76,17 +79,17 @@ Sluice paces dispatches across backends to stay within subscription budgets and 
 
 When an issue passes review, Sluice marks it complete and closes the GitHub issue. You get a notification in Matrix. Forge sync also picks up issues closed manually on GitHub.
 
-Outside jour fixe, use `/status`, `/plan`, and `/help` in Matrix.
+Outside jour fixe, use `/status`, `/plan`, `/cli-auth`, and `/help` in Matrix.
 
 ### Configuration
 
 | Variable | Role |
 |----------|------|
-| `SLUICE_JOUR_FIXE_LLM_*` | Facilitator chat in Docker (no host CLI required) |
+| `SLUICE_AI_BACKENDS` | CLIs to install/auth and the worker pool |
 | `SLUICE_ORCHESTRATOR_BACKEND` | Primary agent that shapes issues (defaults to `SLUICE_PLANNER_BACKEND`) |
 | `SLUICE_REVIEWER_BACKEND` | Second agent for per-issue review loops |
 | `SLUICE_MAX_REVIEW_ITERATIONS` | Max worker/reviewer cycles per issue (default `3`) |
-| `SLUICE_AI_BACKENDS` | Worker pool for implementation |
+| `SLUICE_CLI_BOOTSTRAP_ENABLED` | Install + Matrix-auth CLIs on daemon start |
 
 Without `SLUICE_REVIEWER_BACKEND`, Sluice falls back to single-agent dispatch per issue.
 
@@ -97,7 +100,9 @@ Sluice is privacy-first by design on the chat layer specifically — no third-pa
 ## Getting started (Docker)
 
 Sluice is meant to run as a container. The image is built on GitHub Actions and
-published to GHCR (`ghcr.io/alexseymer/sluice`). Compose only pulls — no local build.
+published to GHCR (`ghcr.io/alexseymer/sluice`). Prefer pulling the published image;
+for local image iteration use `docker compose build` then
+`docker compose up -d --force-recreate --pull never`.
 
 ```bash
 # 1. Create env file (secrets stay on the host, mounted into the container)
