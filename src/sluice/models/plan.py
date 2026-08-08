@@ -16,6 +16,7 @@ class TaskStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     IN_REVIEW = "in_review"
     NEEDS_REVISION = "needs_revision"
+    NEEDS_INPUT = "needs_input"
     COMPLETED = "completed"
     FAILED = "failed"
     BLOCKED = "blocked"

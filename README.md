@@ -6,19 +6,22 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GHCR](https://img.shields.io/badge/container-ghcr.io%2Falexseymer%2Fsluice-2496ED?logo=docker&logoColor=white)](https://github.com/alexseymer/sluice/pkgs/container/sluice)
 
-**Sluice** paces your AI coding CLI usage (Claude Code, Codex, Cursor, Agy, and others) across the day so you stay under subscription rate limits — instead of bursting through your quota in one session and getting silently downgraded to a weaker fallback model, or paying overage rates on metered API billing.
+**Sluice** lets solo builders run CLI coding agents over Matrix — brainstorm and escalate with one coordinator in chat, execute against forge issues/PRs, on generous subscription tokens without terminal babysitting.
 
-You talk to Sluice once a day (or on whatever cadence you set) in a short **jour fixe** — a chat session where you discuss what needs doing. Sluice turns that into a dependency-ordered plan, files it as issues on your Git forge of choice (GitHub today; GitLab and OneDev planned), and works through the backlog throughout the day, scheduling AI CLI calls to stay within each tool's budget. You get pinged with status, blockers, and anything that needs a decision — over Matrix today (Signal and Telegram planned), all privacy-first.
+Forge issues/PRs are the source of truth for execution. Matrix is where you and the coordinator set direction and handle escalations: when the coordinator hits a substantial question it can't resolve alone, it asks in Matrix rather than guessing. Approve/reject still gates forge filing; day-to-day chat is discussion → adjustments → directions.
+
+Hosting is wherever a slim Linux with those CLIs fits (Docker Compose is the easy path; a VM, VPS, Pi, or bare metal works the same idea). Budget pacing across Claude Code, Codex, Cursor, Agy, and others is a supporting mechanism so subscription windows aren't burned in one burst — not the product itself.
 
 ## Status
 
-**Phase 1 is complete** and runnable via **Docker Compose**. The full loop works: cron-triggered jour fixe → conversational planning → `/approve` to file GitHub issues → background dispatch with dependency ordering → budget pacing and backend failover → forge sync when issues close.
+**Phase 1 is complete** and runnable via **Docker Compose** (or any slim Linux host). The full loop works: cron-triggered jour fixe → conversational planning with a coordinator CLI → `/approve` to file GitHub issues → background dispatch with dependency ordering → Matrix escalation when stuck → budget pacing and backend failover → forge sync when issues close.
 
 | Component | Status |
 |-----------|--------|
 | Matrix chat + jour fixe commands | ✅ |
-| Conversational jour fixe (subscription CLIs) | ✅ |
-| Docker CLI install + Matrix login (`/cli-auth`) | ✅ |
+| Conversational coordinator (subscription CLIs) | ✅ |
+| Escalation to Matrix (`/retry`, `/skip`, direction) | ✅ |
+| Docker / slim-Linux CLI install + Matrix login (`/cli-auth`) | ✅ |
 | Orchestrator issue shaping + worker/reviewer loop | ✅ |
 | GitHub issues + dependency links | ✅ |
 | AI backends (Claude Code, Cursor, Agy, Codex) | ✅ |
@@ -26,29 +29,29 @@ You talk to Sluice once a day (or on whatever cadence you set) in a short **jour
 | Interactive `sluice setup` wizard | ✅ |
 | Signal / Telegram / GitLab / OneDev | 🔜 planned |
 
-See [`docs/prd.md`](docs/prd.md) for the product spec and [`ROADMAP.md`](ROADMAP.md) for what's next.
+See [`docs/prd.md`](docs/prd.md) for the product spec, [`STRATEGY.md`](STRATEGY.md) for positioning, and [`ROADMAP.md`](ROADMAP.md) for what's next.
 
 ## Why
 
-AI coding subscriptions have usage windows. Burn through them in a burst and you either get downgraded to a weaker model without much warning, or start paying metered rates. Sluice treats "AI coding capacity" as a schedulable, rate-limited resource — like a build farm schedules CI jobs — so you get consistent throughput without babysitting it.
+CLI coding agents already have generous subscription tokens, but they don't collaborate over Matrix without you babysitting terminals. Metered chat-API agent stacks burn budget differently; Sluice rides the CLIs you already pay for, keeps work on the forge, and uses Matrix as the control and direction channel with one coordinator.
 
 ## How it works
 
-Sluice is **issue-driven**: GitHub issues are the backbone of the plan. A daily jour fixe chat becomes shaped issues, you approve before anything runs, then worker and reviewer CLI agents execute each issue in dependency order.
+Sluice is **issue-driven**: forge issues are the backbone of the plan. A daily jour fixe in Matrix becomes shaped issues, you approve before anything runs, then worker and reviewer CLI agents execute each issue in dependency order. When something substantial is unclear mid-flight, the coordinator escalates in Matrix instead of guessing.
 
 ![Sluice issue-driven workflow (Phase 1)](docs/assets/sluice-workflow-phase1.png)
 
-**Daily chat → AI shapes issues → You approve → Worker/Reviewer loop → Issue done**
+**Chat with coordinator → AI shapes issues → You approve → Worker/Reviewer loop → Escalate if stuck → Issue done**
 
 ### 1. Jour fixe chat
 
-You meet Sluice in Matrix on a schedule (or on demand with `/jour-fixe`). A **facilitator** — your configured AI coding CLI (subscription) — helps you talk through status quo, problems, and how to handle them. This is planning conversation, not execution.
+You meet the coordinator in Matrix on a schedule (or on demand with `/jour-fixe`). A facilitator — your configured AI coding CLI (subscription) — helps you talk through status quo, problems, and how to handle them. This is brainstorming and direction, not execution.
 
-In Docker, Sluice installs the Linux CLIs listed in `SLUICE_AI_BACKENDS` on startup (into `/data/home`) and posts login links to Matrix. For Cursor, open the link; for `agy`, open the link and reply with the verification code. Say `/cli-auth` to retry.
+On Docker (or similar), Sluice installs the Linux CLIs listed in `SLUICE_AI_BACKENDS` on startup (into `/data/home`) and posts login links to Matrix. For Cursor, open the link; for `agy`, open the link and reply with the verification code. Say `/cli-auth` to retry.
 
 ### 2. AI shapes issues
 
-When you say you're done, the **orchestrator** (primary CLI agent) reads the full transcript and shapes it into GitHub-ready issues:
+When you say you're done, the **orchestrator** (primary CLI agent) reads the full transcript and shapes it into forge-ready issues:
 
 - Groups related work into one issue when it ships together (not one micro-issue per bullet)
 - Splits only when work is genuinely independent
@@ -68,6 +71,7 @@ On approval, issues are filed on GitHub. For each **ready** issue (all blockers 
 1. **Worker** CLI agent implements the issue in an isolated worktree
 2. **Reviewer** CLI agent checks the output against acceptance criteria
 3. If review fails, the worker revises — loop until approved or `SLUICE_MAX_REVIEW_ITERATIONS`
+4. If the worker hits a substantial question (or review still fails after max iterations), Sluice **escalates in Matrix** — reply with guidance, `/retry`, or `/skip`
 
 **Sequential:** issue 2 stays blocked until issue 1 is complete and passes review.
 
@@ -79,7 +83,7 @@ Sluice paces dispatches across backends to stay within subscription budgets and 
 
 When an issue passes review, Sluice marks it complete and closes the GitHub issue. You get a notification in Matrix. Forge sync also picks up issues closed manually on GitHub.
 
-Outside jour fixe, use `/status`, `/plan`, `/cli-auth`, and `/help` in Matrix.
+Outside jour fixe, use `/status`, `/plan`, `/cli-auth`, `/retry`, `/skip`, and `/help` in Matrix.
 
 ### Configuration
 
@@ -95,14 +99,11 @@ Without `SLUICE_REVIEWER_BACKEND`, Sluice falls back to single-agent dispatch pe
 
 ## Privacy
 
-Sluice is privacy-first by design on the chat layer specifically — no third-party SaaS relay of your conversations, self-hostable end-to-end via Docker. See [`SECURITY.md`](SECURITY.md) for details and current caveats (e.g. Telegram's lack of E2E for bot chats).
+Sluice is privacy-first by design on the chat layer specifically — no third-party SaaS relay of your conversations, self-hostable end-to-end. See [`SECURITY.md`](SECURITY.md) for details and current caveats (e.g. Telegram's lack of E2E for bot chats).
 
 ## Getting started (Docker)
 
-Sluice is meant to run as a container. The image is built on GitHub Actions and
-published to GHCR (`ghcr.io/alexseymer/sluice`). Prefer pulling the published image;
-for local image iteration use `docker compose build` then
-`docker compose up -d --force-recreate --pull never`.
+Docker Compose is the recommended bring-up; the same app runs on any slim Linux host with the CLIs available. The image is built on GitHub Actions and published to GHCR (`ghcr.io/alexseymer/sluice`). Prefer pulling the published image; for local image iteration use `docker compose build` then `docker compose up -d --force-recreate --pull never`.
 
 ```bash
 # 1. Create env file (secrets stay on the host, mounted into the container)

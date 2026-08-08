@@ -11,7 +11,11 @@ import structlog
 from sluice.adapters.backend import BackendAdapter
 from sluice.core.budget import BudgetManager
 from sluice.core.graph import DependencyGraph
-from sluice.core.orchestrator import execute_task_with_review
+from sluice.core.orchestrator import (
+    escalate_task,
+    execute_task_with_review,
+    extract_escalation,
+)
 from sluice.models.plan import Plan, PlanTask, TaskStatus
 from sluice.models.schedule import DispatchResult, ScheduleSlot
 
@@ -214,6 +218,16 @@ class Scheduler:
                     task_id=str(task.id),
                 )
                 continue
+
+            escalation = extract_escalation(result.output)
+            if escalation:
+                return escalate_task(
+                    task,
+                    backend_id=backend_id,
+                    question=escalation,
+                    output=result.output,
+                    completed_at=result.completed_at,
+                )
 
             task.status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
             task.backend_id = backend_id

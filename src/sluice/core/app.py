@@ -6,10 +6,12 @@ import structlog
 
 from sluice.adapters.backend import BackendAdapter
 from sluice.adapters.backend_factory import build_backends
+from sluice.adapters.chat import OutgoingMessage
 from sluice.adapters.github_forge import GitHubForgeAdapter
 from sluice.adapters.matrix_chat import MatrixChatAdapter
 from sluice.config import SluiceSettings
 from sluice.core.budget import BudgetManager
+from sluice.core.escalation import find_pending_escalation, format_escalation_message
 from sluice.core.jour_fixe import JourFixeManager
 from sluice.core.jour_fixe_chat import JourFixeLlmSettings
 from sluice.core.plan_approval import PlanApprovalManager
@@ -111,6 +113,9 @@ class SluiceApp:
             tasks=len(plan.tasks),
             queued_slots=len(slots),
         )
+        escalation = find_pending_escalation(plan)
+        if escalation is not None and self.chat.is_configured:
+            await self.chat.send(OutgoingMessage(text=format_escalation_message(escalation)))
 
     async def stop(self) -> None:
         await self.chat.stop()
