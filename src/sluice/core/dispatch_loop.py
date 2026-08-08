@@ -8,6 +8,10 @@ import structlog
 
 from sluice.adapters.chat import OutgoingMessage
 from sluice.core.app import SluiceApp
+from sluice.core.escalation import (
+    find_pending_escalation,
+    format_escalation_message,
+)
 from sluice.core.forge_sync import close_forge_issue_for_task
 from sluice.core.scheduler import Scheduler
 from sluice.models.plan import Plan, plan_is_complete
@@ -74,6 +78,23 @@ async def _notify_dispatch_result(
         )
         if task is not None:
             await close_forge_issue_for_task(app, task)
+    elif result.needs_input:
+        escalation = find_pending_escalation(plan)
+        if escalation is not None:
+            message = format_escalation_message(escalation)
+        else:
+            question = result.escalation_question or result.error or "Need your direction."
+            message = (
+                f"I need your direction before continuing on: {title}\n\n"
+                f"{question}\n\n"
+                "Reply with guidance, `/retry` to try again as-is, or `/skip` to abandon."
+            )
+        log.info(
+            "task_escalated",
+            task_id=str(result.task_id),
+            backend_id=result.backend_id,
+            question=(result.escalation_question or "")[:200],
+        )
     elif result.quota_exceeded:
         message = f"Task deferred (quota): {title} on {result.backend_id}"
         log.warning(

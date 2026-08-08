@@ -158,10 +158,10 @@ class MatrixChatAdapter(ChatAdapter):
         await self.send(
             OutgoingMessage(
                 text=(
-                    "Good to meet — let's do a short jour fixe.\n\n"
+                    "Good to meet — let's brainstorm and set direction.\n\n"
                     "Where do we stand, and what problems or surprises showed up "
                     "since last time? Once we've talked it through, say you're done "
-                    "and I'll turn our discussion into a concrete plan."
+                    "and I'll turn our discussion into forge issues for your approval."
                 )
             )
         )

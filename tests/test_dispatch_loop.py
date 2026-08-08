@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sluice.core.dispatch_loop import on_plan_approved, run_dispatch_loop
+from sluice.core.dispatch_loop import _notify_dispatch_result, on_plan_approved, run_dispatch_loop
 from sluice.models.plan import Plan, PlanTask, TaskStatus, plan_is_complete
 from sluice.models.schedule import DispatchResult
 
@@ -51,6 +51,43 @@ def test_plan_is_not_complete_with_pending_tasks() -> None:
         ]
     )
     assert plan_is_complete(plan) is False
+
+
+def test_plan_is_not_complete_with_needs_input() -> None:
+    plan = Plan(
+        tasks=[
+            PlanTask(title="Done", status=TaskStatus.COMPLETED),
+            PlanTask(title="Waiting on human", status=TaskStatus.NEEDS_INPUT),
+        ]
+    )
+    assert plan_is_complete(plan) is False
+
+
+@pytest.mark.asyncio
+async def test_dispatch_notifies_escalation() -> None:
+    task = PlanTask(
+        title="Add auth",
+        description="x\n\nEscalation:\nJWT?",
+        status=TaskStatus.NEEDS_INPUT,
+    )
+    plan = Plan(tasks=[task])
+    result = DispatchResult(
+        task_id=task.id,
+        backend_id="claude_code",
+        success=False,
+        needs_input=True,
+        escalation_question="JWT?",
+    )
+    app = MagicMock()
+    app.chat = AsyncMock()
+    app.chat.is_configured = True
+    app.chat.send = AsyncMock()
+
+    await _notify_dispatch_result(app, plan, result)
+
+    text = app.chat.send.await_args.args[0].text
+    assert "Add auth" in text
+    assert "/retry" in text
 
 
 @pytest.mark.asyncio

@@ -4,16 +4,17 @@
 
 ### Current repository state
 
-Sluice is in **Phase 1** — a runnable Python package with core interfaces and Docker
-Compose bring-up. The Matrix chat adapter and GitHub forge adapter are implemented;
-plan approval in chat files issues on `/approve`. Claude Code adapter remains a stub.
+Sluice is a runnable Python package: Matrix ↔ CLI coordinator, GitHub forge backbone,
+`/approve` gate, worker/reviewer dispatch, and Matrix escalation when stuck. Docker
+Compose is the documented bring-up; any slim Linux host with subscription CLIs works
+in principle. See [`STRATEGY.md`](STRATEGY.md) for product positioning.
 
 ### Project layout
 
 ```
 src/sluice/
   adapters/     # Protocol interfaces + implementations (matrix, github, CLI backends)
-  core/         # Jour fixe, planner, dependency graph, scheduler, budget manager
+  core/         # Jour fixe, planner, escalation, dependency graph, scheduler, budget
   models/       # Pydantic domain models
   setup/        # Interactive `sluice setup` + runtime CLI install/Matrix auth
   store/        # SQLite persistence
@@ -47,7 +48,7 @@ docker build -t sluice:local .
 
 ### Environment baseline
 
-- **Runtime:** Docker / Docker Compose (primary).
+- **Runtime:** slim Linux with CLI agents — Docker Compose documented first; host choice is not the product.
 - Python 3.12 (`python3`, `pip3`) for local tests — no `python` alias on Cloud VMs; use `python3`.
 - Node.js 22, GNU Make 4.3.
 - Docker may need to be installed for `docker compose up` (not pre-installed on all VMs).
@@ -59,22 +60,25 @@ pulling the latest changes. It is idempotent and guards for whichever Python man
 exist (`requirements.txt`, `requirements-dev.txt`, `pyproject.toml`). Agents should not
 need to reinstall manually unless dependencies change mid-run.
 
-### Phase 1 implementation order (from ROADMAP.md)
+### Implementation notes (from ROADMAP / STRATEGY)
 
-1. ~~Matrix chat adapter~~ (done)
-2. ~~GitHub forge adapter~~ (done)
-3. ~~Plan approval in chat~~ (done)
-4. ~~AI CLI backends (Claude Code, Cursor, agy)~~ (done)
-5. Jour fixe scheduler integration (cron-triggered sessions)
-6. ~~Budget tracking wired to SQLite store~~ (done)
+Done: Matrix chat, GitHub forge, plan approval, AI CLI backends (Claude Code, Cursor,
+agy, Codex), jour fixe + coordinator, budget tracking, Matrix escalation on stuck work.
 
-AI CLI backends: Claude Code (`claude`), Cursor (`agent`), and Antigravity (`agy`).
+Still open: jour fixe cron polish vs real load, multi-forge, Signal/Telegram,
+multi-agent rooms (later).
+
+AI CLI backends: Claude Code (`claude`), Cursor (`agent`), Antigravity (`agy`), Codex.
 Enable via `SLUICE_AI_BACKENDS=cursor,agy` (or include `claude_code` / `codex`).
 On Docker start, Sluice installs enabled Linux CLIs under `/data/home` and posts
 subscription login links to Matrix (Cursor: open the link; `agy`: open the link and
-reply with the verification code). Retry with `/cli-auth`. Jour fixe uses those CLIs
-only — no metered chat API. Tasks can set `backend_id` or Sluice picks the first
-backend with budget headroom.
+reply with the verification code). Retry with `/cli-auth`. Jour fixe / coordinator
+uses those CLIs only — no metered chat API. Tasks can set `backend_id` or Sluice picks
+the first backend with budget headroom. Budget pacing is a supporting mechanism.
+
+When a worker hits a substantial question (`ESCALATE: …`) or review iterations exhaust,
+Sluice sets `needs_input` and asks in Matrix. Human replies with direction, `/retry`,
+or `/skip`.
 
 ### Secrets
 

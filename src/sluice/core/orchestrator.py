@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 import structlog
@@ -15,6 +16,16 @@ from sluice.models.schedule import DispatchResult
 log = structlog.get_logger()
 
 _REVIEW_JSON = re.compile(r"\{[\s\S]*\}")
+_ESCALATE_RE = re.compile(r"^ESCALATE:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
+
+
+def extract_escalation(output: str) -> str | None:
+    """Return an escalation question if the worker asked for human direction."""
+    match = _ESCALATE_RE.search(output or "")
+    if match is None:
+        return None
+    question = match.group(1).strip()
+    return question or None
 
 
 def build_worker_prompt(task: PlanTask, *, review_feedback: str = "") -> str:
@@ -40,6 +51,11 @@ def build_worker_prompt(task: PlanTask, *, review_feedback: str = "") -> str:
             "",
             "Implement this issue in the worktree. Make focused changes that satisfy "
             "the acceptance criteria.",
+            "",
+            "If you hit a substantial product, architecture, or scope question you "
+            "cannot resolve from the issue alone, do not guess. Stop and reply with "
+            "exactly one line of the form:",
+            "ESCALATE: <the question for the human>",
         ]
     )
     return "\n".join(lines)
@@ -97,7 +113,7 @@ async def execute_task_with_review(
     worktree: Path,
     max_iterations: int,
 ) -> DispatchResult:
-    """Run worker → reviewer loop until criteria pass or iterations exhaust."""
+    """Run worker → reviewer loop until criteria pass, escalate, or fail hard."""
     review_feedback = ""
     last_worker: DispatchResult | None = None
 
@@ -120,6 +136,16 @@ async def execute_task_with_review(
         if not worker_result.success:
             task.status = TaskStatus.FAILED
             return worker_result
+
+        escalation = extract_escalation(worker_result.output)
+        if escalation:
+            return escalate_task(
+                task,
+                backend_id=worker.adapter_id,
+                question=escalation,
+                output=worker_result.output,
+                completed_at=worker_result.completed_at,
+            )
 
         task.status = TaskStatus.IN_REVIEW
         review_task = PlanTask(
@@ -171,12 +197,48 @@ async def execute_task_with_review(
             feedback=review_feedback[:200],
         )
 
-    task.status = TaskStatus.FAILED
+    question = (
+        review_feedback
+        if review_feedback
+        else f"Acceptance criteria not met after {max_iterations} review iteration(s)"
+    )
+    return escalate_task(
+        task,
+        backend_id=last_worker.backend_id if last_worker else worker.adapter_id,
+        question=question,
+        output=last_worker.output if last_worker else "",
+        completed_at=last_worker.completed_at if last_worker else None,
+    )
+
+
+def escalate_task(
+    task: PlanTask,
+    *,
+    backend_id: str,
+    question: str,
+    output: str,
+    completed_at: datetime | None,
+) -> DispatchResult:
+    """Pause the issue and surface a substantial question to Matrix."""
+    note = f"\n\nEscalation:\n{question}"
+    base = task.description or task.title
+    if "Escalation:" not in base:
+        task.description = base + note
+    else:
+        task.description = base.rsplit("Escalation:", 1)[0].rstrip() + note
+    task.status = TaskStatus.NEEDS_INPUT
+    log.info(
+        "task_needs_input",
+        task_id=str(task.id),
+        question=question[:200],
+    )
     return DispatchResult(
         task_id=task.id,
-        backend_id=last_worker.backend_id if last_worker else worker.adapter_id,
+        backend_id=backend_id,
         success=False,
-        output=last_worker.output if last_worker else "",
-        error=f"Acceptance criteria not met after {max_iterations} review iteration(s)",
-        completed_at=last_worker.completed_at if last_worker else None,
+        output=output,
+        error=question,
+        needs_input=True,
+        escalation_question=question,
+        completed_at=completed_at,
     )

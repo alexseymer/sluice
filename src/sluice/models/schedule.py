@@ -27,4 +27,6 @@ class DispatchResult(BaseModel):
     error: str | None = None
     fallback_detected: bool = False
     quota_exceeded: bool = False
+    needs_input: bool = False
+    escalation_question: str | None = None
     completed_at: datetime | None = None

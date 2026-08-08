@@ -11,6 +11,7 @@ from sluice.core.orchestrator import (
     build_review_prompt,
     build_worker_prompt,
     execute_task_with_review,
+    extract_escalation,
     parse_review_output,
 )
 from sluice.core.planner_llm import _parse_plan_output
@@ -46,6 +47,7 @@ def test_build_worker_prompt_includes_criteria_and_feedback() -> None:
     prompt = build_worker_prompt(task, review_feedback="Missing tests")
     assert "Acceptance criteria" in prompt
     assert "Missing tests" in prompt
+    assert "ESCALATE:" in prompt
 
 
 def test_build_review_prompt_includes_worker_output() -> None:
@@ -159,6 +161,38 @@ async def test_execute_task_with_review_retries_until_approved(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+async def test_execute_task_with_review_escalates_on_worker_marker(tmp_path: Path) -> None:
+    task = PlanTask(title="Add login", acceptance_criteria="- returns JWT")
+    worker = AsyncMock()
+    worker.adapter_id = "claude_code"
+    worker.dispatch = AsyncMock(
+        return_value=DispatchResult(
+            task_id=task.id,
+            backend_id="claude_code",
+            success=True,
+            output="ESCALATE: Should we use JWT or sessions?",
+        )
+    )
+    reviewer = AsyncMock()
+    reviewer.adapter_id = "cursor"
+    reviewer.dispatch = AsyncMock()
+
+    result = await execute_task_with_review(
+        worker=worker,
+        reviewer=reviewer,
+        task=task,
+        worktree=tmp_path,
+        max_iterations=3,
+    )
+
+    assert result.needs_input is True
+    assert result.success is False
+    assert task.status == TaskStatus.NEEDS_INPUT
+    assert "JWT or sessions" in (result.escalation_question or "")
+    reviewer.dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_execute_task_with_review_fails_after_max_iterations(tmp_path: Path) -> None:
     task = PlanTask(title="Add login", acceptance_criteria="- returns JWT")
     worker = AsyncMock()
@@ -190,6 +224,11 @@ async def test_execute_task_with_review_fails_after_max_iterations(tmp_path: Pat
         max_iterations=2,
     )
 
-    assert result.success is False
-    assert task.status == TaskStatus.FAILED
+    assert result.needs_input is True
+    assert task.status == TaskStatus.NEEDS_INPUT
     assert worker.dispatch.await_count == 2
+
+
+def test_extract_escalation_helper() -> None:
+    assert extract_escalation("ESCALATE: hello") == "hello"
+    assert extract_escalation("nope") is None

@@ -9,19 +9,28 @@ import structlog
 from sluice.adapters.chat import IncomingMessage, OutgoingMessage
 from sluice.core.app import SluiceApp
 from sluice.core.dispatch_loop import on_plan_approved
+from sluice.core.escalation import (
+    apply_direction,
+    find_pending_escalation,
+    format_escalation_message,
+    mark_retry,
+    mark_skipped,
+)
 from sluice.core.plan_approval import PlanApprovalError
+from sluice.core.scheduler import Scheduler
 from sluice.models.plan import Plan
 from sluice.setup.cli_runtime import bootstrap_ai_clis
 
 log = structlog.get_logger()
 
-HELP_TEXT = """We're here to talk through the work — status quo, how to handle problems,
-then a concrete plan I'll coordinate afterward.
+HELP_TEXT = """We're here to brainstorm and set direction — then I coordinate
+CLI agents against forge issues so you don't babysit terminals.
 
 When you want to meet, say `/jour-fixe` (or just "jour fixe").
 When you're ready to wrap up, say you're done (or `/done`) and I'll summarize the plan.
 Then `/approve` to file issues, or `/reject` to discard.
 
+If I escalate mid-flight, reply with guidance, `/retry`, or `/skip`.
 Other: `/status`, `/plan`, `/cli-auth`, `/help`"""
 
 _NATURAL_CLOSE = frozenset(
@@ -112,6 +121,15 @@ async def approve_plan(app: SluiceApp) -> Plan:
     return plan
 
 
+async def _resume_after_escalation(app: SluiceApp, *, notice: str) -> None:
+    plan = app.active_plan
+    if plan is None:
+        return
+    await app.scheduler.schedule_ready_tasks(plan)
+    await app.store.save_plan(plan)
+    await app.chat.send(OutgoingMessage(text=notice))
+
+
 async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
     command = message.text.strip().lower()
     log.info("chat_command", sender=message.sender, command=command[:80])
@@ -159,6 +177,10 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
                     )
                 )
             )
+            return
+        escalation = find_pending_escalation(app.active_plan)
+        if escalation is not None:
+            await app.chat.send(OutgoingMessage(text=format_escalation_message(escalation)))
             return
         if app.plan_approval.has_pending_plan and app.plan_approval.pending_plan is not None:
             plan = app.plan_approval.pending_plan
@@ -212,8 +234,48 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         )
         return
 
+    escalation = find_pending_escalation(app.active_plan)
     session = app.jour_fixe.active_session
     session_active = session is not None and session.is_active
+
+    if command in {"/retry", "/skip"} or (
+        escalation is not None and not session_active and not command.startswith("/")
+    ):
+        if escalation is None:
+            await app.chat.send(
+                OutgoingMessage(text="Nothing is waiting on your direction right now.")
+            )
+            return
+        plan = app.active_plan
+        assert plan is not None
+        task = Scheduler.find_task(plan, escalation.task_id)
+        if task is None:
+            await app.chat.send(OutgoingMessage(text="I lost track of that escalated issue."))
+            return
+
+        if command == "/skip":
+            mark_skipped(task)
+            await _resume_after_escalation(
+                app,
+                notice=f"Skipped: {task.title}. Continuing with anything else that's ready.",
+            )
+            return
+
+        if command == "/retry":
+            mark_retry(task)
+            await _resume_after_escalation(
+                app,
+                notice=f"Retrying: {task.title}.",
+            )
+            return
+
+        # Plain-language direction for the escalated issue.
+        apply_direction(task, message.text.strip())
+        await _resume_after_escalation(
+            app,
+            notice=f"Got it — resuming {task.title} with your direction.",
+        )
+        return
 
     if command == "/done" or is_natural_close(command):
         if not session_active:
@@ -225,6 +287,9 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         return
 
     if not session_active:
+        if escalation is not None:
+            await app.chat.send(OutgoingMessage(text=format_escalation_message(escalation)))
+            return
         await app.chat.send(
             OutgoingMessage(
                 text=(
