@@ -141,10 +141,19 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         drain = getattr(app.chat, "drain_pending_messages", None)
         if callable(drain):
             drain()
+        targets = app.settings.secondary_backend_ids()
+        if not targets:
+            targets = app.settings.enabled_backend_ids()
         await bootstrap_ai_clis(
             settings=app.settings,
             chat=app.chat,
             home=app.settings.resolved_cli_home_dir,
+            backend_ids=targets,
+            intro=(
+                "Retrying CLI install/login for: "
+                + ", ".join(targets)
+                + "\n(Install + subscription login — no metered chat API.)"
+            ),
         )
         return
 

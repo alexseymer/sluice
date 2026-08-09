@@ -47,7 +47,7 @@ Sluice is **issue-driven**: forge issues are the backbone of the plan. A daily j
 
 You meet the coordinator in Matrix on a schedule (or on demand with `/jour-fixe`). A facilitator — your configured AI coding CLI (subscription) — helps you talk through status quo, problems, and how to handle them. This is brainstorming and direction, not execution.
 
-On Docker (or similar), Sluice installs the Linux CLIs listed in `SLUICE_AI_BACKENDS` on startup (into `/data/home`) and posts login links to Matrix. For Cursor, open the link; for `agy`, open the link and reply with the verification code. Say `/cli-auth` to retry.
+On Docker (or similar), `sluice setup` signs in your **primary** CLI agent over Matrix. On daemon start, Sluice installs and authenticates any **additional** backends listed in `SLUICE_AI_BACKENDS` via Matrix (`/cli-auth` to retry).
 
 ### 2. AI shapes issues
 
@@ -135,7 +135,7 @@ docker compose pull
 docker compose up -d --force-recreate
 ```
 
-`sluice setup` asks for minimal input (repo, a GitHub OAuth App client ID with Device Flow enabled, Matrix homeserver + your login, and ideally Synapse's `registration_shared_secret`). Existing `.env` values are offered as defaults; a still-valid GitHub token skips device login.
+`sluice setup` runs in order: **Matrix** (bot + room), **primary CLI login** in that room (proves Matrix ↔ agent works), then **GitHub** device flow for the forge. Additional CLIs in `SLUICE_AI_BACKENDS` sign in over Matrix when the daemon starts (or via `/cli-auth`). Existing `.env` values are offered as defaults; valid saved credentials skip re-auth.
 
 ### Local development (optional)
 

@@ -368,11 +368,105 @@ def configured_cli_path(settings: SluiceSettings, backend_id: str) -> str | None
     return mapping.get(backend_id)
 
 
+async def is_backend_authenticated(
+    *,
+    backend_id: str,
+    spec: CliSpec,
+    home: Path,
+    configured_path: str | None = None,
+) -> bool:
+    binary = resolve_binary(spec, home, configured_path)
+    if binary is None:
+        return False
+    if backend_id == "cursor":
+        return await is_cursor_authenticated(binary, home)
+    if backend_id == "agy":
+        return await is_agy_authenticated(home)
+    if backend_id == "codex":
+        return True
+    return True
+
+
+async def bootstrap_backend(
+    *,
+    backend_id: str,
+    settings: SluiceSettings,
+    home: Path,
+    send: SendFn,
+    wait_for_message: WaitFn | None,
+    timeout: float,
+) -> bool:
+    """Install and authenticate one CLI backend. Returns True on success."""
+    spec = SPECS.get(backend_id)
+    if spec is None:
+        await send(f"Unknown backend {backend_id!r} — skipping.")
+        return False
+
+    if spec.auth_kind == "none" and backend_id == "codex":
+        binary = resolve_binary(spec, home, configured_cli_path(settings, backend_id))
+        if binary is None:
+            await send(
+                "Codex is enabled but not auto-installed in this image. "
+                "Install `codex` into PATH or drop it from SLUICE_AI_BACKENDS."
+            )
+            return False
+        return True
+
+    ok, detail = await install_cli(spec, home=home)
+    if not ok:
+        await send(f"Failed to install {backend_id}: {detail[:400]}")
+        return False
+
+    binary = resolve_binary(spec, home, configured_cli_path(settings, backend_id))
+    if binary is None:
+        await send(f"{backend_id}: binary still missing after install.")
+        return False
+
+    if await is_backend_authenticated(
+        backend_id=backend_id,
+        spec=spec,
+        home=home,
+        configured_path=configured_cli_path(settings, backend_id),
+    ):
+        await send(f"{backend_id} is already signed in.")
+        return True
+
+    if spec.auth_kind == "link" and backend_id == "cursor":
+        return await authenticate_cursor(
+            binary=binary,
+            home=home,
+            send=send,
+            timeout=timeout,
+        )
+    if spec.auth_kind == "link_and_code" and backend_id == "agy":
+        if wait_for_message is None:
+            await send("Matrix must be running to sign in agy (reply with a verification code).")
+            return False
+        return await authenticate_agy(
+            binary=binary,
+            home=home,
+            send=send,
+            wait_for_message=wait_for_message,
+            timeout=timeout,
+        )
+    if backend_id == "claude_code":
+        await send(
+            "Claude Code is installed. If it asks you to log in on first use, "
+            "we'll surface that in Matrix on the next jour fixe turn."
+        )
+        return True
+
+    return True
+
+
 async def bootstrap_ai_clis(
     *,
     settings: SluiceSettings,
     chat: ChatAdapter,
     home: Path | None = None,
+    backend_ids: list[str] | None = None,
+    intro: str | None = None,
+    outro: str | None = None,
 ) -> None:
     """Install enabled CLIs and complete Matrix-assisted login when needed."""
     if not settings.cli_bootstrap_enabled:
@@ -382,6 +476,9 @@ async def bootstrap_ai_clis(
     home_path = home or settings.resolved_cli_home_dir
     ensure_runtime_paths(home_path)
     timeout = float(settings.cli_auth_timeout_seconds)
+    targets = backend_ids if backend_ids is not None else settings.enabled_backend_ids()
+    if not targets:
+        return
 
     async def send(text: str) -> None:
         if chat.is_configured and getattr(chat, "is_running", False):
@@ -395,64 +492,29 @@ async def bootstrap_ai_clis(
             raise RuntimeError("Chat adapter cannot wait for a reply (need Matrix)")
         return await waiter(timeout_seconds=wait_timeout)
 
-    enabled = settings.enabled_backend_ids()
-    await send(
-        "Preparing AI coding CLIs for: "
-        + ", ".join(enabled)
-        + "\n(Install + subscription login — no metered chat API.)"
-    )
+    if intro is not None:
+        await send(intro)
+    else:
+        await send(
+            "Preparing AI coding CLIs for: "
+            + ", ".join(targets)
+            + "\n(Install + subscription login — no metered chat API.)"
+        )
 
-    for backend_id in enabled:
-        spec = SPECS.get(backend_id)
-        if spec is None:
-            await send(f"Unknown backend {backend_id!r} — skipping install.")
-            continue
+    for backend_id in targets:
+        await bootstrap_backend(
+            backend_id=backend_id,
+            settings=settings,
+            home=home_path,
+            send=send,
+            wait_for_message=wait_for_message,
+            timeout=timeout,
+        )
 
-        if spec.auth_kind == "none" and backend_id == "codex":
-            # Codex install needs root apt/npm; skip auto-install in the slim image.
-            binary = resolve_binary(spec, home_path, configured_cli_path(settings, backend_id))
-            if binary is None:
-                await send(
-                    "Codex is enabled but not auto-installed in this image. "
-                    "Install `codex` into PATH or drop it from SLUICE_AI_BACKENDS."
-                )
-            continue
-
-        ok, detail = await install_cli(spec, home=home_path)
-        if not ok:
-            await send(f"Failed to install {backend_id}: {detail[:400]}")
-            continue
-
-        binary = resolve_binary(spec, home_path, configured_cli_path(settings, backend_id))
-        if binary is None:
-            await send(f"{backend_id}: binary still missing after install.")
-            continue
-
-        if spec.auth_kind == "link" and backend_id == "cursor":
-            await authenticate_cursor(
-                binary=binary,
-                home=home_path,
-                send=send,
-                timeout=timeout,
-            )
-        elif spec.auth_kind == "link_and_code" and backend_id == "agy":
-            drain = getattr(chat, "drain_pending_messages", None)
-            if callable(drain):
-                drain()
-            await authenticate_agy(
-                binary=binary,
-                home=home_path,
-                send=send,
-                wait_for_message=wait_for_message,
-                timeout=timeout,
-            )
-        elif backend_id == "claude_code":
-            await send(
-                "Claude Code is installed. If it asks you to log in on first use, "
-                "we'll surface that in Matrix on the next jour fixe turn."
-            )
-
-    await send("CLI bootstrap finished. You can start a jour fixe with `/jour-fixe`.")
+    if outro is not None:
+        await send(outro)
+    else:
+        await send("CLI bootstrap finished. You can start a jour fixe with `/jour-fixe`.")
     drain = getattr(chat, "drain_pending_messages", None)
     if callable(drain):
         drain()
