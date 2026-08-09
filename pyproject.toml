@@ -15,7 +15,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "croniter>=6.2.4",
     "httpx>=0.27",
-    "matrix-nio>=0.25",
+    "matrix-nio>=0.26.0",
     "structlog>=26.1.0",
 ]
 
