@@ -426,9 +426,9 @@ async def send_setup_notice(
         json={
             "msgtype": "m.notice",
             "body": (
-                "Sluice is connected. Accept the invite if you have not already, "
-                "then say `/jour-fixe` when you want to meet — we'll talk through "
-                "where things stand and shape a plan together."
+                "Sluice is connected. Accept the invite if you have not already. "
+                "Chat here anytime — say `/jour-fixe` when you want a planning session "
+                "to shape forge issues."
             ),
         },
     )

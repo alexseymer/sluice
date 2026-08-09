@@ -24,6 +24,8 @@ def app() -> MagicMock:
     mock.jour_fixe.handle_message = AsyncMock()
     mock.jour_fixe.close_session = AsyncMock()
     mock.jour_fixe.next_scheduled_at = MagicMock(return_value=MagicMock(isoformat=lambda: "soon"))
+    mock.casual_chat = MagicMock()
+    mock.casual_chat.handle_message = AsyncMock()
     mock.plan_approval = MagicMock(spec=PlanApprovalManager)
     mock.plan_approval.has_pending_plan = False
     mock.plan_approval.pending_plan = None
@@ -120,9 +122,16 @@ async def test_plain_message_forwarded_to_jour_fixe(app: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_plain_message_outside_session_gets_nudge(app: MagicMock) -> None:
-    await handle_message(
-        app, IncomingMessage(text="Build auth module", sender="@you:example.com")
-    )
+async def test_plain_message_outside_session_uses_casual_chat(app: MagicMock) -> None:
+    message = IncomingMessage(text="Build auth module", sender="@you:example.com")
+    await handle_message(app, message)
     app.jour_fixe.handle_message.assert_not_awaited()
-    assert "/jour-fixe" in app.chat.send.await_args.args[0].text
+    app.casual_chat.handle_message.assert_awaited_once_with(message)
+
+
+@pytest.mark.asyncio
+async def test_natural_close_outside_session_uses_casual_chat(app: MagicMock) -> None:
+    message = IncomingMessage(text="that's all", sender="@you:example.com")
+    await handle_message(app, message)
+    app.jour_fixe.close_session.assert_not_awaited()
+    app.casual_chat.handle_message.assert_awaited_once_with(message)

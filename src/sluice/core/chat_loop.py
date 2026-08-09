@@ -23,11 +23,10 @@ from sluice.setup.cli_runtime import bootstrap_ai_clis
 
 log = structlog.get_logger()
 
-HELP_TEXT = """We're here to brainstorm and set direction — then I coordinate
-CLI agents against forge issues so you don't babysit terminals.
+HELP_TEXT = """Chat with me anytime — questions, ideas, status checks, whatever's on your mind.
 
-When you want to meet, say `/jour-fixe` (or just "jour fixe").
-When you're ready to wrap up, say you're done (or `/done`) and I'll summarize the plan.
+When you want a planning session to shape forge issues, say `/jour-fixe`.
+When you're ready to wrap that up, say you're done (or `/done`) and I'll summarize the plan.
 Then `/approve` to file issues, or `/reject` to discard.
 
 If I escalate mid-flight, reply with guidance, `/retry`, or `/skip`.
@@ -199,7 +198,7 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
                 text=(
                     "Nothing active right now. "
                     f"Next scheduled jour fixe: {next_at.isoformat()}. "
-                    "Or say `/jour-fixe` to start one now."
+                    "Chat normally anytime, or say `/jour-fixe` to start a planning session."
                 )
             )
         )
@@ -277,7 +276,7 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         )
         return
 
-    if command == "/done" or is_natural_close(command):
+    if command == "/done":
         if not session_active:
             await app.chat.send(
                 OutgoingMessage(text="No jour fixe is running to close.")
@@ -286,18 +285,15 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         await finalize_jour_fixe(app)
         return
 
+    if session_active and is_natural_close(command):
+        await finalize_jour_fixe(app)
+        return
+
     if not session_active:
         if escalation is not None:
             await app.chat.send(OutgoingMessage(text=format_escalation_message(escalation)))
             return
-        await app.chat.send(
-            OutgoingMessage(
-                text=(
-                    "No jour fixe running — say `/jour-fixe` when you want to meet "
-                    "and we'll start with where things stand."
-                )
-            )
-        )
+        await app.casual_chat.handle_message(message)
         return
 
     await app.jour_fixe.handle_message(message)

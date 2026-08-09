@@ -1,8 +1,9 @@
-"""Conversational AI facilitator for active jour fixe sessions."""
+"""Conversational AI facilitator for Matrix chat (jour fixe and casual ask mode)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import httpx
@@ -12,6 +13,14 @@ from sluice.adapters.backend import BackendAdapter
 from sluice.models.plan import PlanTask
 
 log = structlog.get_logger()
+
+
+class ChatMode(StrEnum):
+    """Conversation style for facilitator prompts."""
+
+    JOUR_FIXE = "jour_fixe"
+    CASUAL = "casual"
+
 
 _SYSTEM_PROMPT = """You are Sluice's coordinator in Matrix — a calm, practical partner
 for a solo builder. You brainstorm, set direction, and escalate; forge issues/PRs are
@@ -33,14 +42,45 @@ Rules:
 - Do not mention internal UUIDs, env vars, or implementation details of Sluice itself.
 """
 
-_FACILITATOR_PROMPT = """Transcript so far:
+_CASUAL_SYSTEM_PROMPT = """You are Sluice's coordinator in Matrix — a helpful partner for a
+solo builder. This is normal chat (ask mode): answer questions, discuss ideas, explain
+tradeoffs, and help think through problems in plain conversation.
+
+Rules:
+- Reply in natural language only (no JSON, no markdown code fences unless genuinely helpful).
+- Be conversational and direct — not robotic, and do not list slash commands unless asked.
+- You are NOT in a jour fixe planning session unless the human explicitly started one.
+- If they want to turn discussion into forge issues for approval, mention `/jour-fixe` once
+  when it fits — do not nag about commands every message.
+- When something substantial is unclear, ask focused questions rather than guessing.
+- Keep replies concise — a few short paragraphs at most.
+- Do not invent internal UUIDs, env vars, or implementation details of Sluice itself.
+"""
+
+_FACILITATOR_PROMPTS: dict[ChatMode, str] = {
+    ChatMode.JOUR_FIXE: """Transcript so far:
 {transcript}
 
 Latest human message:
 {latest}
 
 Respond as the jour fixe facilitator.
-"""
+""",
+    ChatMode.CASUAL: """Conversation so far:
+{transcript}
+
+Latest message:
+{latest}
+
+Respond naturally as the coordinator.
+""",
+}
+
+
+def system_prompt_for(mode: ChatMode) -> str:
+    if mode is ChatMode.CASUAL:
+        return _CASUAL_SYSTEM_PROMPT
+    return _SYSTEM_PROMPT
 
 NO_BACKEND_REPLY = (
     "I can listen and take notes, but I need a signed-in AI coding CLI for conversation. "
@@ -98,8 +138,10 @@ def extract_facilitator_reply(output: str) -> str:
     return reply
 
 
-def _chat_messages(turns: list[tuple[str, str]]) -> list[dict[str, str]]:
-    messages: list[dict[str, str]] = [{"role": "system", "content": _SYSTEM_PROMPT}]
+def _chat_messages(turns: list[tuple[str, str]], *, mode: ChatMode) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": system_prompt_for(mode)}
+    ]
     for role, text in turns:
         messages.append(
             {
@@ -115,6 +157,7 @@ async def facilitate_via_llm(
     settings: JourFixeLlmSettings,
     turns: list[tuple[str, str]],
     latest_human: str,
+    mode: ChatMode = ChatMode.JOUR_FIXE,
 ) -> str | None:
     """Call an OpenAI-compatible /chat/completions endpoint."""
     del latest_human  # already included in turns
@@ -123,7 +166,7 @@ async def facilitate_via_llm(
     url = f"{base}/chat/completions"
     payload = {
         "model": settings.model,
-        "messages": _chat_messages(turns),
+        "messages": _chat_messages(turns, mode=mode),
         "temperature": 0.4,
     }
     headers = {
@@ -164,15 +207,17 @@ async def facilitate_via_cli(
     turns: list[tuple[str, str]],
     latest_human: str,
     worktree: Path,
+    mode: ChatMode = ChatMode.JOUR_FIXE,
 ) -> tuple[str | None, str | None]:
     """Ask the configured AI CLI. Returns (reply, user_facing_error)."""
     worktree.mkdir(parents=True, exist_ok=True)
-    prompt = _FACILITATOR_PROMPT.format(
+    facilitator = _FACILITATOR_PROMPTS[mode]
+    prompt = facilitator.format(
         transcript=format_transcript(turns),
         latest=latest_human,
     )
     # Include system guidance in the CLI prompt body.
-    full_prompt = f"{_SYSTEM_PROMPT}\n\n{prompt}"
+    full_prompt = f"{system_prompt_for(mode)}\n\n{prompt}"
     task = PlanTask(title="jour-fixe-chat", description=full_prompt)
     result = await backend.dispatch(task, worktree=worktree)
     if not result.success or not (result.output or "").strip():
@@ -184,6 +229,11 @@ async def facilitate_via_cli(
         err = result.error or ""
         if "CLI not found" in err or "No such file" in err:
             return None, _CLI_MISSING_HINT
+        if mode is ChatMode.CASUAL:
+            return None, (
+                "I couldn't get a reply from the AI backend just now. "
+                "Try again in a moment, or say `/cli-auth` if login is pending."
+            )
         return None, (
             "I couldn't get a reply from the AI backend just now. "
             "Say a bit more, or tell me when you're done and I'll draft the plan "
@@ -203,6 +253,7 @@ async def facilitate_turn(
     worktree: Path,
     backend: BackendAdapter | None = None,
     llm: JourFixeLlmSettings | None = None,
+    mode: ChatMode = ChatMode.JOUR_FIXE,
 ) -> tuple[str | None, str | None]:
     """Return (assistant_reply, user_facing_error). Subscription CLIs only."""
     del llm  # Kept for call-site compatibility; metered APIs are intentionally unused.
@@ -212,6 +263,7 @@ async def facilitate_turn(
             turns=turns,
             latest_human=latest_human,
             worktree=worktree,
+            mode=mode,
         )
 
     return None, NO_BACKEND_REPLY
