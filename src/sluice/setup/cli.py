@@ -8,6 +8,7 @@ import getpass
 from pathlib import Path
 
 from sluice.config import SluiceSettings, load_settings
+from sluice.setup.cli_bootstrap import PrimaryCliSetupError, setup_primary_cli
 from sluice.setup.envfile import upsert_env_file
 from sluice.setup.github_oauth import (
     DeviceCode,
@@ -293,10 +294,20 @@ async def run_setup_async(args: argparse.Namespace) -> int:
     print(f"Writing credentials to {env_path.resolve()}")
     do_github = not args.matrix_only
     do_matrix = not args.github_only
+    do_primary_cli = not args.github_only and not args.skip_cli_setup
     settings = load_settings()
     client_id = args.github_client_id or settings.github_oauth_client_id
 
     try:
+        if do_matrix:
+            await _setup_matrix(
+                env_path=env_path,
+                settings=settings,
+                force=args.force_matrix_setup,
+            )
+            settings = load_settings()
+        if do_primary_cli:
+            await setup_primary_cli(settings=settings, force=args.force_cli_setup)
         if do_github:
             await _setup_github(
                 env_path=env_path,
@@ -304,13 +315,7 @@ async def run_setup_async(args: argparse.Namespace) -> int:
                 client_id=client_id,
                 force_auth=args.force_github_auth,
             )
-        if do_matrix:
-            await _setup_matrix(
-                env_path=env_path,
-                settings=settings,
-                force=args.force_matrix_setup,
-            )
-    except (GitHubAuthError, MatrixSetupError) as exc:
+    except (GitHubAuthError, MatrixSetupError, PrimaryCliSetupError) as exc:
         print(f"\nSetup failed: {exc}")
         return 1
     except (EOFError, KeyboardInterrupt):
@@ -328,7 +333,9 @@ def run_setup(args: argparse.Namespace) -> int:
 def add_setup_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "setup",
-        help="Interactive setup: GitHub device login + Matrix bot/room provisioning",
+        help=(
+            "Interactive setup: Matrix + primary CLI login, then GitHub device flow"
+        ),
     )
     parser.add_argument(
         "--env-file",
@@ -359,5 +366,15 @@ def add_setup_parser(subparsers: argparse._SubParsersAction) -> None:
         "--force-matrix-setup",
         action="store_true",
         help="Re-run Matrix prompts even if saved bot credentials still work",
+    )
+    parser.add_argument(
+        "--skip-cli-setup",
+        action="store_true",
+        help="Skip primary CLI install/login during setup (Matrix only)",
+    )
+    parser.add_argument(
+        "--force-cli-setup",
+        action="store_true",
+        help="Re-run primary CLI login even if already signed in",
     )
     parser.set_defaults(handler=run_setup)

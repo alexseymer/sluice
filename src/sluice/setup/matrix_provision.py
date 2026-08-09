@@ -427,8 +427,8 @@ async def send_setup_notice(
             "msgtype": "m.notice",
             "body": (
                 "Sluice is connected. Accept the invite if you have not already. "
-                "Chat here anytime — say `/jour-fixe` when you want a planning session "
-                "to shape forge issues."
+                "If you have not finished `sluice setup`, complete primary CLI login "
+                "here first — then chat anytime or `/jour-fixe` for a planning session."
             ),
         },
     )

@@ -132,6 +132,21 @@ class SluiceSettings(BaseSettings):
             return [self.ai_backend]
         return [backend.strip() for backend in raw.split(",") if backend.strip()]
 
+    def primary_backend_id(self) -> str:
+        """Planner/default backend used for chat; first in SLUICE_AI_BACKENDS otherwise."""
+        enabled = set(self.enabled_backend_ids())
+        for candidate in (self.planner_backend, self.default_backend):
+            if candidate and candidate in enabled:
+                return candidate
+        enabled_list = self.enabled_backend_ids()
+        if enabled_list:
+            return enabled_list[0]
+        return self.ai_backend
+
+    def secondary_backend_ids(self) -> list[str]:
+        primary = self.primary_backend_id()
+        return [backend for backend in self.enabled_backend_ids() if backend != primary]
+
 
 def load_settings() -> SluiceSettings:
     return SluiceSettings()
