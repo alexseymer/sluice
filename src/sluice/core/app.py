@@ -59,6 +59,7 @@ class SluiceApp:
         self.planner = Planner(
             orchestrator=orchestrator_backend,
             worktree_base=settings.data_dir / "planner",
+            enabled_backends=settings.enabled_backend_ids(),
         )
         self.jour_fixe = JourFixeManager(
             chat=self.chat,
@@ -85,6 +86,7 @@ class SluiceApp:
             default_backend=settings.default_backend,
             reviewer_backend=reviewer_backend,
             max_review_iterations=settings.max_review_iterations,
+            dispatch_poll_seconds=settings.dispatch_poll_seconds,
         )
         self.plan_approval = PlanApprovalManager(
             forge=self.forge,

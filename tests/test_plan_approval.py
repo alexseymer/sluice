@@ -96,6 +96,23 @@ async def test_format_plan_shows_dependencies(forge: AsyncMock, store: AsyncMock
     manager = PlanApprovalManager(forge, store)
     text = manager.format_plan(plan)
 
-    assert "1. Schema" in text
+    assert "1. Schema [auto]" in text
     assert "after issue 1" in text
     assert "/approve" in text
+    assert "/backend <n> <id|auto>" in text
+
+
+@pytest.mark.asyncio
+async def test_format_plan_shows_backend_assignment(forge: AsyncMock, store: AsyncMock) -> None:
+    plan = Plan(
+        tasks=[
+            PlanTask(title="Schema", backend_id="cursor"),
+            PlanTask(title="API client"),
+        ]
+    )
+    manager = PlanApprovalManager(forge, store)
+    text = manager.format_plan(plan)
+
+    assert "1. Schema [cursor]" in text
+    assert "2. API client [auto]" in text
+    assert "/backend <n> <id|auto>" in text
