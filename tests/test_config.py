@@ -18,6 +18,15 @@ def test_enabled_backend_ids_falls_back_to_legacy_ai_backend() -> None:
     assert settings.enabled_backend_ids() == ["cursor"]
 
 
+def test_primary_and_secondary_backend_ids() -> None:
+    settings = SluiceSettings(
+        ai_backends="cursor,agy,claude_code",
+        planner_backend="agy",
+    )
+    assert settings.primary_backend_id() == "agy"
+    assert settings.secondary_backend_ids() == ["cursor", "claude_code"]
+
+
 def test_sqlite_path_from_absolute_aiosqlite_url() -> None:
     settings = SluiceSettings(database_url="sqlite+aiosqlite:////data/sluice.db")
     assert settings.sqlite_path == Path("/data/sluice.db")

@@ -55,6 +55,37 @@ async def test_bootstrap_skips_when_disabled(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_bootstrap_secondary_only(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    settings = SluiceSettings(
+        data_dir=tmp_path,
+        ai_backends="cursor,agy",
+        planner_backend="cursor",
+        cli_bootstrap_enabled=True,
+    )
+    chat = MagicMock()
+    chat.is_configured = True
+    chat.is_running = True
+    chat.send = AsyncMock()
+    chat.drain_pending_messages = MagicMock(return_value=0)
+    chat.wait_for_message = AsyncMock()
+
+    with (
+        patch("sluice.setup.cli_runtime.bootstrap_backend", new_callable=AsyncMock) as boot,
+    ):
+        boot.return_value = True
+        await bootstrap_ai_clis(
+            settings=settings,
+            chat=chat,
+            home=home,
+            backend_ids=settings.secondary_backend_ids(),
+        )
+
+    boot.assert_awaited_once()
+    assert boot.await_args.kwargs["backend_id"] == "agy"
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_installs_and_auths(tmp_path: Path) -> None:
     home = tmp_path / "home"
     settings = SluiceSettings(
@@ -75,6 +106,11 @@ async def test_bootstrap_installs_and_auths(tmp_path: Path) -> None:
         patch(
             "sluice.setup.cli_runtime.resolve_binary",
             side_effect=["/bin/agent", "/bin/agy"],
+        ),
+        patch(
+            "sluice.setup.cli_runtime.is_backend_authenticated",
+            new_callable=AsyncMock,
+            return_value=False,
         ),
         patch(
             "sluice.setup.cli_runtime.authenticate_cursor",

@@ -39,7 +39,29 @@ async def _run_daemon() -> int:
     app = SluiceApp(settings)
     await app.start()
     try:
-        await bootstrap_ai_clis(settings=settings, chat=app.chat, home=home)
+        secondary = settings.secondary_backend_ids()
+        if secondary:
+            await bootstrap_ai_clis(
+                settings=settings,
+                chat=app.chat,
+                home=home,
+                backend_ids=secondary,
+                intro=(
+                    "Setting up additional CLI agents via Matrix: "
+                    + ", ".join(secondary)
+                    + "\n(Install + subscription login — no metered chat API.)"
+                ),
+                outro=(
+                    "Additional CLI setup finished. Chat anytime, or `/jour-fixe` "
+                    "when you want a planning session."
+                ),
+            )
+        elif settings.cli_bootstrap_enabled:
+            log.info(
+                "cli_bootstrap_secondary_skipped",
+                reason="only primary backend enabled",
+                primary=settings.primary_backend_id(),
+            )
     except Exception:
         log.exception("cli_bootstrap_failed")
         if app.chat.is_configured and getattr(app.chat, "is_running", False):
