@@ -34,7 +34,13 @@ async def test_setup_primary_cli_skips_when_ready(tmp_path, capsys) -> None:
 
 @pytest.mark.asyncio
 async def test_setup_primary_cli_requires_matrix(tmp_path) -> None:
-    settings = SluiceSettings(data_dir=tmp_path, ai_backends="cursor")
+    settings = SluiceSettings(
+        data_dir=tmp_path,
+        ai_backends="cursor",
+        matrix_homeserver=None,
+        matrix_room_id=None,
+        matrix_access_token=None,
+    )
     with pytest.raises(PrimaryCliSetupError, match="Matrix is not configured"):
         await setup_primary_cli(settings=settings)
 

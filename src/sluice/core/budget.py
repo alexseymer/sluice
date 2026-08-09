@@ -27,6 +27,31 @@ class BudgetManager:
                 available.append(backend_id)
         return available
 
+    async def rank_available(self) -> list[str]:
+        """Backends with headroom, best remaining first.
+
+        Probing backends (no ``observed_limit``, at/past cautious) sort after
+        backends with positive remaining, and ahead of exhausted (excluded).
+        Ties keep configured backend insertion order.
+        """
+        ranked: list[tuple[int, int, int, str]] = []
+        for index, backend_id in enumerate(self._backends):
+            budget = await self.snapshot(backend_id)
+            if not budget.has_headroom:
+                continue
+            # Primary: more remaining first. Probing → remaining_units 0, so last
+            # among headroom backends; is_probing is a stable secondary key.
+            ranked.append(
+                (
+                    -budget.remaining_units,
+                    1 if budget.is_probing else 0,
+                    index,
+                    backend_id,
+                )
+            )
+        ranked.sort()
+        return [backend_id for *_, backend_id in ranked]
+
     async def exhausted_backends(self) -> list[str]:
         exhausted: list[str] = []
         for backend_id in self._backends:

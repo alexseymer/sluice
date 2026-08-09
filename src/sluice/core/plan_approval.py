@@ -112,6 +112,7 @@ class PlanApprovalManager:
         lines.extend(["", f"We'll tackle this in {len(plan.tasks)} issue(s):"])
         task_index = {task.id: index for index, task in enumerate(plan.tasks, start=1)}
         for index, task in enumerate(plan.tasks, start=1):
+            backend_tag = f" [{task.backend_id}]" if task.backend_id else " [auto]"
             deps = ""
             if task.depends_on:
                 dep_indexes = [str(task_index[dep_id]) for dep_id in task.depends_on]
@@ -122,7 +123,7 @@ class PlanApprovalManager:
             criteria = ""
             if task.acceptance_criteria:
                 criteria = f"\n   Done when: {task.acceptance_criteria}"
-            lines.append(f"{index}. {task.title}{deps}{detail}{criteria}")
+            lines.append(f"{index}. {task.title}{backend_tag}{deps}{detail}{criteria}")
 
         if plan.is_approved:
             lines.extend(["", "Status: approved and filed:"])
@@ -133,6 +134,7 @@ class PlanApprovalManager:
             lines.extend(
                 [
                     "",
+                    "Override backend with `/backend <n> <id|auto>` before `/approve`.",
                     "If this looks right, reply `/approve` and I'll file the issues "
                     "(shaped for best practice) and coordinate worker + reviewer agents. "
                     "Or `/reject` to discard and we can talk again.",

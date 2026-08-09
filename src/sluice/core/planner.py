@@ -21,9 +21,11 @@ class Planner:
         *,
         orchestrator: BackendAdapter | None = None,
         worktree_base: Path | None = None,
+        enabled_backends: list[str] | None = None,
     ) -> None:
         self._orchestrator = orchestrator
         self._worktree_base = worktree_base or Path(".sluice-data/planner")
+        self._enabled_backends = list(enabled_backends or [])
 
     async def generate_plan(
         self,
@@ -40,6 +42,7 @@ class Planner:
                 session_id=session_id,
                 task_descriptions=task_descriptions,
                 worktree=worktree,
+                enabled_backends=self._enabled_backends,
             )
             if shaped is not None:
                 log.info("orchestrator_plan_shaped", tasks=len(shaped.tasks))
