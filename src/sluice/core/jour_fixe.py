@@ -15,6 +15,7 @@ from sluice.adapters.backend import BackendAdapter
 from sluice.adapters.chat import ChatAdapter, IncomingMessage, OutgoingMessage
 from sluice.core.jour_fixe_chat import (
     NO_BACKEND_REPLY,
+    ChatMode,
     JourFixeLlmSettings,
     facilitate_turn,
 )
@@ -133,6 +134,7 @@ class JourFixeManager:
                 worktree=worktree,
                 backend=self._conversation_backend,
                 llm=self._llm,
+                mode=ChatMode.JOUR_FIXE,
             )
         except Exception:
             log.exception("jour_fixe_facilitate_failed", session_id=str(self._session.id))

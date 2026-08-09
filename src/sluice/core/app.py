@@ -11,6 +11,7 @@ from sluice.adapters.github_forge import GitHubForgeAdapter
 from sluice.adapters.matrix_chat import MatrixChatAdapter
 from sluice.config import SluiceSettings
 from sluice.core.budget import BudgetManager
+from sluice.core.casual_chat import CasualChatManager
 from sluice.core.escalation import find_pending_escalation, format_escalation_message
 from sluice.core.jour_fixe import JourFixeManager
 from sluice.core.jour_fixe_chat import JourFixeLlmSettings
@@ -71,6 +72,11 @@ class SluiceApp:
                 api_key=settings.jour_fixe_llm_api_key,
                 model=settings.jour_fixe_llm_model,
             ),
+        )
+        self.casual_chat = CasualChatManager(
+            chat=self.chat,
+            conversation_backend=conversation_backend,
+            worktree_base=settings.data_dir / "casual-chat",
         )
         self.scheduler = Scheduler(
             backends=self.backends,
