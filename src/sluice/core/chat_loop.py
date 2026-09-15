@@ -18,7 +18,8 @@ from sluice.core.escalation import (
 )
 from sluice.core.plan_approval import PlanApprovalError
 from sluice.core.scheduler import Scheduler
-from sluice.models.plan import Plan
+from sluice.models.budget import BudgetSnapshot
+from sluice.models.plan import Plan, TaskStatus
 from sluice.setup.cli_runtime import bootstrap_ai_clis
 
 log = structlog.get_logger()
@@ -28,6 +29,8 @@ HELP_TEXT = """Chat with me anytime — questions, ideas, status checks, whateve
 When you want a planning session to shape forge issues, say `/jour-fixe`.
 When you're ready to wrap that up, say you're done (or `/done`) and I'll summarize the plan.
 Then `/approve` to file issues, or `/reject` to discard.
+While a plan is pending, `/backend <n> <id|auto>` (alias `/assign`)
+overrides the worker CLI for issue n.
 
 If I escalate mid-flight, reply with guidance, `/retry`, or `/skip`.
 Other: `/status`, `/plan`, `/cli-auth`, `/help`"""
@@ -120,6 +123,103 @@ async def approve_plan(app: SluiceApp) -> Plan:
     return plan
 
 
+def _format_budget_line(snapshot: BudgetSnapshot) -> str:
+    """One short line: ``cursor: 3/10`` with optional exhausted/probing tag."""
+    limit = snapshot.window.effective_limit
+    line = f"{snapshot.backend_id}: {snapshot.used_units}/{limit}"
+    if snapshot.is_exhausted:
+        return f"{line} exhausted"
+    if snapshot.is_probing:
+        return f"{line} probing"
+    return line
+
+
+async def _format_budget_status_lines(app: SluiceApp) -> list[str]:
+    """Per-backend budget lines for ``/status`` (empty when no backends)."""
+    backends = getattr(app, "backends", None)
+    if not isinstance(backends, dict) or not backends:
+        return []
+
+    manager = getattr(app, "budget_manager", None)
+    lines: list[str] = []
+    for backend_id, backend in backends.items():
+        try:
+            if manager is not None and callable(getattr(manager, "snapshot", None)):
+                snapshot = await manager.snapshot(backend_id)
+            else:
+                snapshot = await backend.get_budget()
+            if not isinstance(snapshot, BudgetSnapshot):
+                continue
+            lines.append(_format_budget_line(snapshot))
+        except Exception:
+            log.exception("budget_status_failed", backend_id=backend_id)
+    return lines
+
+
+async def _with_budget_status(app: SluiceApp, text: str) -> str:
+    """Append budget lines to a status message when available."""
+    lines = await _format_budget_status_lines(app)
+    if not lines:
+        return text
+    return text + "\n\n" + "\n".join(lines)
+
+
+async def _handle_backend_command(app: SluiceApp, raw_text: str) -> None:
+    """Override per-issue backend on a pending plan: `/backend <n> <id|auto>`."""
+    if not app.plan_approval.has_pending_plan or app.plan_approval.pending_plan is None:
+        await app.chat.send(
+            OutgoingMessage(
+                text="No plan is waiting for approval — `/backend` only works before `/approve`."
+            )
+        )
+        return
+
+    parts = raw_text.split()
+    if len(parts) < 3:
+        await app.chat.send(
+            OutgoingMessage(text="Usage: `/backend <n> <id|auto>` (alias `/assign`).")
+        )
+        return
+
+    try:
+        index = int(parts[1])
+    except ValueError:
+        await app.chat.send(
+            OutgoingMessage(text="Issue index must be a number, e.g. `/backend 1 cursor`.")
+        )
+        return
+
+    plan = app.plan_approval.pending_plan
+    if index < 1 or index > len(plan.tasks):
+        await app.chat.send(
+            OutgoingMessage(
+                text=f"Issue index out of range — plan has {len(plan.tasks)} issue(s)."
+            )
+        )
+        return
+
+    enabled = app.settings.enabled_backend_ids()
+    choice = parts[2].strip().lower()
+    task = plan.tasks[index - 1]
+    if choice == "auto":
+        task.backend_id = None
+    else:
+        # Preserve canonical id from settings (command text is lowercased upstream).
+        match = next((b for b in enabled if b.lower() == choice), None)
+        if match is None:
+            enabled_label = ", ".join(enabled) if enabled else "(none configured)"
+            await app.chat.send(
+                OutgoingMessage(
+                    text=f"Unknown backend {parts[2]!r}. Enabled: {enabled_label}."
+                )
+            )
+            return
+        task.backend_id = match
+
+    await app.store.save_plan(plan)
+    await app.chat.send(OutgoingMessage(text=app.plan_approval.format_plan(plan)))
+
+
 async def _resume_after_escalation(app: SluiceApp, *, notice: str) -> None:
     plan = app.active_plan
     if plan is None:
@@ -192,24 +292,33 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
             return
         if app.plan_approval.has_pending_plan and app.plan_approval.pending_plan is not None:
             plan = app.plan_approval.pending_plan
+            text = (
+                f"No meeting running. A plan with {len(plan.tasks)} task(s) "
+                "is waiting for `/approve` or `/reject`."
+            )
             await app.chat.send(
-                OutgoingMessage(
-                    text=(
-                        f"No meeting running. A plan with {len(plan.tasks)} task(s) "
-                        "is waiting for `/approve` or `/reject`."
-                    )
-                )
+                OutgoingMessage(text=await _with_budget_status(app, text))
+            )
+            return
+        if app.active_plan is not None:
+            plan = app.active_plan
+            completed = sum(1 for t in plan.tasks if t.status == TaskStatus.COMPLETED)
+            text = (
+                f"Working an approved plan: {completed}/{len(plan.tasks)} "
+                "issue(s) complete."
+            )
+            await app.chat.send(
+                OutgoingMessage(text=await _with_budget_status(app, text))
             )
             return
         next_at = app.jour_fixe.next_scheduled_at()
+        text = (
+            "Nothing active right now. "
+            f"Next scheduled jour fixe: {next_at.isoformat()}. "
+            "Chat normally anytime, or say `/jour-fixe` to start a planning session."
+        )
         await app.chat.send(
-            OutgoingMessage(
-                text=(
-                    "Nothing active right now. "
-                    f"Next scheduled jour fixe: {next_at.isoformat()}. "
-                    "Chat normally anytime, or say `/jour-fixe` to start a planning session."
-                )
-            )
+            OutgoingMessage(text=await _with_budget_status(app, text))
         )
         return
 
@@ -220,6 +329,10 @@ async def handle_message(app: SluiceApp, message: IncomingMessage) -> None:
         await app.chat.send(
             OutgoingMessage(text=app.plan_approval.format_plan(app.plan_approval.pending_plan))
         )
+        return
+
+    if command in {"/backend", "/assign"} or command.startswith(("/backend ", "/assign ")):
+        await _handle_backend_command(app, message.text.strip())
         return
 
     if command == "/approve":

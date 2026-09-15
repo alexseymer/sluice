@@ -24,6 +24,9 @@ Issues are the backbone of the plan. Shape them for best practice before any wor
 - Each issue should be completable by a specialist CLI agent in one focused session.
 - Write clear acceptance criteria so a separate reviewer agent can verify completion.
 
+Enabled worker backends (optional assignment): {enabled_backends}
+Use backend_id only when a specific CLI clearly fits; otherwise null/omit for auto-assign.
+
 Transcript:
 {conversation}
 
@@ -35,7 +38,8 @@ Respond with ONLY valid JSON in this shape:
       "title": "concise issue title",
       "description": "context and scope for the worker agent",
       "acceptance_criteria": "bullet list of testable done conditions",
-      "depends_on": ["exact title of blocker issue"]
+      "depends_on": ["exact title of blocker issue"],
+      "backend_id": "cursor"
     }}
   ]
 }}
@@ -45,6 +49,7 @@ Rules:
 - Use depends_on only when one issue must finish before another starts.
 - Omit depends_on or use an empty list when there are no blockers.
 - Parallelizable issues should share the same blockers, not depend on each other.
+- backend_id must be one of the enabled backends listed above, or null/omitted for auto.
 - Ignore slash-command noise and meta talk about Sluice itself.
 """
 
@@ -57,13 +62,21 @@ async def generate_plan_with_llm(
     session_id: str,
     task_descriptions: list[str],
     worktree: Path,
+    enabled_backends: list[str] | None = None,
 ) -> Plan | None:
     """Ask the orchestrator backend to shape jour fixe output into issues."""
     if not task_descriptions:
         return Plan(jour_fixe_session_id=_session_uuid(session_id))
 
+    backends = list(enabled_backends or [])
+    backends_label = (
+        ", ".join(backends) if backends else "(none configured — leave backend_id null)"
+    )
     conversation = "\n".join(task_descriptions)
-    prompt = _ORCHESTRATOR_SHAPE_PROMPT.format(conversation=conversation)
+    prompt = _ORCHESTRATOR_SHAPE_PROMPT.format(
+        conversation=conversation,
+        enabled_backends=backends_label,
+    )
     planning_task = PlanTask(title="jour-fixe-orchestration", description=prompt)
 
     result = await backend.dispatch(planning_task, worktree=worktree)
@@ -75,13 +88,36 @@ async def generate_plan_with_llm(
         )
         return None
 
-    plan = _parse_plan_output(result.output, session_id=session_id)
+    plan = _parse_plan_output(
+        result.output,
+        session_id=session_id,
+        enabled_backends=backends,
+    )
     if plan is None:
         log.warning("orchestrator_shape_parse_failed", backend_id=result.backend_id)
     return plan
 
 
-def _parse_plan_output(output: str, *, session_id: str) -> Plan | None:
+def _parse_backend_id(raw: object, *, enabled: set[str]) -> str | None:
+    """Keep only enabled backend IDs; invalid/missing → None (auto)."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        return None
+    candidate = raw.strip()
+    if not candidate or candidate.lower() in {"null", "none", "auto"}:
+        return None
+    if candidate in enabled:
+        return candidate
+    return None
+
+
+def _parse_plan_output(
+    output: str,
+    *,
+    session_id: str,
+    enabled_backends: list[str] | None = None,
+) -> Plan | None:
     match = _JSON_BLOCK.search(output)
     if match is None:
         return None
@@ -95,6 +131,7 @@ def _parse_plan_output(output: str, *, session_id: str) -> Plan | None:
     if not isinstance(raw_tasks, list) or not raw_tasks:
         return None
 
+    enabled = set(enabled_backends or [])
     tasks: list[PlanTask] = []
     tasks_by_title: dict[str, PlanTask] = {}
 
@@ -106,7 +143,13 @@ def _parse_plan_output(output: str, *, session_id: str) -> Plan | None:
             continue
         description = str(item.get("description", title)).strip() or title
         acceptance = str(item.get("acceptance_criteria", "")).strip()
-        task = PlanTask(title=title, description=description, acceptance_criteria=acceptance)
+        backend_id = _parse_backend_id(item.get("backend_id"), enabled=enabled)
+        task = PlanTask(
+            title=title,
+            description=description,
+            acceptance_criteria=acceptance,
+            backend_id=backend_id,
+        )
         tasks.append(task)
         tasks_by_title[title.lower()] = task
 

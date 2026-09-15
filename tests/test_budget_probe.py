@@ -255,3 +255,38 @@ def test_budget_snapshot_headroom_with_observed_limit() -> None:
     )
     assert snapshot.has_headroom is False
     assert snapshot.remaining_units == 0
+
+
+@pytest.mark.asyncio
+async def test_rank_available_orders_by_remaining_then_probing() -> None:
+    async def snap(backend_id: str, **kwargs) -> AsyncMock:
+        mock = AsyncMock()
+        mock.get_budget = AsyncMock(
+            return_value=BudgetSnapshot(
+                backend_id=backend_id,
+                used_units=kwargs.get("used", 0),
+                window=BudgetWindow(
+                    backend_id=backend_id,
+                    window_seconds=3600,
+                    cautious_limit=kwargs.get("cautious", 10),
+                    observed_limit=kwargs.get("observed"),
+                ),
+                is_exhausted=kwargs.get("exhausted", False),
+            )
+        )
+        return mock
+
+    exhausted = await snap("exhausted", used=5, cautious=5, observed=5, exhausted=True)
+    probing = await snap("probing", used=10, cautious=10, observed=None)
+    low = await snap("low", used=8, cautious=10, observed=10)
+    high = await snap("high", used=1, cautious=10, observed=10)
+
+    backends = {
+        "exhausted": exhausted,
+        "probing": probing,
+        "low": low,
+        "high": high,
+    }
+    ranked = await BudgetManager(backends).rank_available()
+    assert ranked == ["high", "low", "probing"]
+    assert "exhausted" not in ranked

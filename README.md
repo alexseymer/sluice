@@ -83,7 +83,7 @@ Sluice paces dispatches across backends to stay within subscription budgets and 
 
 When an issue passes review, Sluice marks it complete and closes the GitHub issue. You get a notification in Matrix. Forge sync also picks up issues closed manually on GitHub.
 
-Outside jour fixe, use `/status`, `/plan`, `/cli-auth`, `/retry`, `/skip`, and `/help` in Matrix.
+Outside jour fixe, use `/status`, `/plan`, `/cli-auth`, `/retry`, `/skip`, and `/help` in Matrix. While a plan is pending approval, `/backend <n> <id|auto>` (alias `/assign`) overrides the worker CLI for issue n.
 
 ### Configuration
 
