@@ -17,9 +17,9 @@ This roadmap mirrors the phasing in [`docs/prd.md`](docs/prd.md) and the tracks 
 
 **Phase 1 is complete.** Sluice runs end-to-end: Matrix coordinator sessions, GitHub issue filing on `/approve`, background dispatch with dependency ordering, Matrix escalation when stuck, budget pacing as a supporting mechanism, and forge sync when issues close. Docker Compose is the documented bring-up; any slim Linux host with CLI agents works in principle.
 
-**Phase 2 is mostly done.** Four AI CLI backends ship (Claude Code, Cursor, Agy, Codex) with heuristic budget probing, quota detection, and fallback-model failover.
+**Phase 2 is complete** for the multi-backend leftovers: per-task backend assignment UX, headroom-ranked scheduling/pacing, and `/status` budget visibility. Four AI CLI backends ship (Claude Code, Cursor, Agy, Codex) with heuristic budget probing, quota detection, and fallback-model failover.
 
-**Next up:** scheduling refinements from real-world budget data, multi-forge support, and additional chat backends.
+**Next up:** multi-forge support and additional chat backends.
 
 ## Phase 1 — Core loop (Matrix + forge + coordinator) ✅
 
@@ -39,13 +39,13 @@ This roadmap mirrors the phasing in [`docs/prd.md`](docs/prd.md) and the tracks 
 - [x] Interactive `sluice setup` wizard
 - [x] Docker Compose bring-up (GHCR image on `main`)
 
-## Phase 2 — Multi-backend (mostly complete)
+## Phase 2 — Multi-backend ✅
 
 - [x] Cursor / Agy / Codex adapters
 - [x] Fallback-model detection + scheduler failover
 - [x] Budget probing beyond cautious defaults
-- [ ] Scheduling refinements once real budget data exists
-- [ ] Per-task `backend_id` assignment UX in jour fixe / plan review
+- [x] Scheduling refinements once real budget data exists
+- [x] Per-task `backend_id` assignment UX in jour fixe / plan review
 
 ## Phase 3 — Multi-forge
 

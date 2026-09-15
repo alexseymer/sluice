@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from sluice.core.orchestrator import (
     execute_task_with_review,
     extract_escalation,
 )
+from sluice.models.budget import BudgetSnapshot
 from sluice.models.plan import Plan, PlanTask, TaskStatus
 from sluice.models.schedule import DispatchResult, ScheduleSlot
 
@@ -34,6 +36,7 @@ class Scheduler:
         *,
         reviewer_backend: BackendAdapter | None = None,
         max_review_iterations: int = 3,
+        dispatch_poll_seconds: int = 30,
     ) -> None:
         self._backends = backends
         self._budget = budget_manager
@@ -41,6 +44,7 @@ class Scheduler:
         self._default_backend = default_backend
         self._reviewer = reviewer_backend
         self._max_review_iterations = max_review_iterations
+        self._dispatch_poll_seconds = max(1, dispatch_poll_seconds)
         self._queue: list[ScheduleSlot] = []
         self._queued_task_ids: set[UUID] = set()
 
@@ -61,6 +65,13 @@ class Scheduler:
         graph = DependencyGraph(plan)
         graph.validate()
         ready = graph.ready_tasks()
+        now = datetime.now(UTC)
+        queued_per_backend: dict[str, int] = {}
+        for existing in self._queue:
+            queued_per_backend[existing.backend_id] = (
+                queued_per_backend.get(existing.backend_id, 0) + 1
+            )
+        snapshots: dict[str, BudgetSnapshot] = {}
         slots: list[ScheduleSlot] = []
         for task in ready:
             if task.id in self._queued_task_ids:
@@ -69,44 +80,114 @@ class Scheduler:
             if backend_id is None:
                 log.warning("no_backend_available", task_id=str(task.id))
                 continue
+            if backend_id not in snapshots:
+                snapshots[backend_id] = await self._budget.snapshot(backend_id)
+            index = queued_per_backend.get(backend_id, 0)
             slot = ScheduleSlot(
                 backend_id=backend_id,
                 task_id=task.id,
-                scheduled_at=plan.created_at,
+                scheduled_at=self._pace_scheduled_at(
+                    now, snapshots[backend_id], index
+                ),
             )
+            queued_per_backend[backend_id] = index + 1
             slots.append(slot)
             self._queued_task_ids.add(task.id)
         self._queue.extend(slots)
         return slots
 
-    async def _pick_backend(self) -> str | None:
-        if (
-            self._default_backend
-            and self._default_backend in self._backends
-            and await self._budget.can_dispatch(self._default_backend)
-        ):
-            return self._default_backend
+    def _pace_scheduled_at(
+        self, now: datetime, snapshot: BudgetSnapshot, index: int
+    ) -> datetime:
+        """Stagger the index-th slot for a backend across the remaining window."""
+        window = snapshot.window
+        window_end: datetime | None = None
+        if window.window_start is not None:
+            start = window.window_start
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=UTC)
+            window_end = start + timedelta(seconds=window.window_seconds)
+            window_seconds_left = max(0.0, (window_end - now).total_seconds())
+        else:
+            window_seconds_left = float(window.window_seconds)
 
-        available = await self._budget.available_backends()
-        return available[0] if available else None
+        interval = max(
+            float(self._dispatch_poll_seconds),
+            window_seconds_left / max(1, snapshot.remaining_units),
+        )
+        scheduled = now + timedelta(seconds=index * interval)
+        if window_end is not None and scheduled > window_end:
+            return window_end
+        return scheduled
+
+    async def _pick_backend(self) -> str | None:
+        ranked = await self._budget.rank_available()
+        if not ranked:
+            return None
+
+        best = ranked[0]
+        default = self._default_backend
+        if (
+            default
+            and default in self._backends
+            and default in ranked
+        ):
+            default_snap = await self._budget.snapshot(default)
+            best_snap = await self._budget.snapshot(best)
+            if default_snap.remaining_units >= best_snap.remaining_units:
+                return default
+        return best
+
+    def _next_due_slot(self, now: datetime) -> ScheduleSlot | None:
+        for slot in self._queue:
+            if self._is_due(slot, now):
+                return slot
+        return None
+
+    def _due_slots_one_per_backend(self, now: datetime) -> list[ScheduleSlot]:
+        """Due slots only; at most one per backend (queue order)."""
+        selected: list[ScheduleSlot] = []
+        seen_backends: set[str] = set()
+        for slot in self._queue:
+            if not self._is_due(slot, now):
+                continue
+            if slot.backend_id in seen_backends:
+                continue
+            seen_backends.add(slot.backend_id)
+            selected.append(slot)
+        return selected
+
+    @staticmethod
+    def _is_due(slot: ScheduleSlot, now: datetime) -> bool:
+        scheduled = slot.scheduled_at
+        if scheduled.tzinfo is None:
+            scheduled = scheduled.replace(tzinfo=UTC)
+        compare_now = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+        return scheduled <= compare_now
 
     async def dispatch_next(self, plan: Plan) -> DispatchResult | None:
-        """Dispatch the next queued task, failing over on quota exhaustion."""
+        """Dispatch the next due queued task, failing over on quota exhaustion."""
         if not self._queue:
             return None
 
-        slot = self._queue[0]
+        slot = self._next_due_slot(datetime.now(UTC))
+        if slot is None:
+            return None
+
         result = await self._dispatch_slot(plan, slot)
         if result is not None and not self._should_requeue(result):
             self._dequeue(slot.task_id)
         return result
 
     async def dispatch_ready_parallel(self, plan: Plan) -> list[DispatchResult]:
-        """Dispatch all queued ready tasks concurrently (e.g. independent issues)."""
+        """Dispatch due slots concurrently — at most one per backend per poll."""
         if not self._queue:
             return []
 
-        slots = list(self._queue)
+        slots = self._due_slots_one_per_backend(datetime.now(UTC))
+        if not slots:
+            return []
+
         results = await asyncio.gather(
             *(self._dispatch_slot(plan, slot) for slot in slots),
             return_exceptions=True,

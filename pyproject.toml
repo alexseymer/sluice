@@ -11,11 +11,11 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.13.4",
-    "pydantic-settings>=2.14.2",
+    "pydantic-settings>=2.15.0",
     "aiosqlite>=0.22.1",
     "croniter>=6.2.4",
     "httpx>=0.28.1",
-    "matrix-nio>=0.25",
+    "matrix-nio>=0.26.0",
     "structlog>=26.1.0",
 ]
 
@@ -23,8 +23,8 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "ruff>=0.16.5",
-    "mypy>=2.3.0",
+    "ruff>=0.16.1",
+    "mypy>=2.3.1",
 ]
 
 [project.scripts]
